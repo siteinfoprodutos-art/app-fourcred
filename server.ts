@@ -183,36 +183,12 @@ const INITIAL_PROPOSALS = [
 let inMemoryProposals = JSON.parse(JSON.stringify(INITIAL_PROPOSALS));
 
 // Health & System status
-app.get('/api/health', async (_req: Request, res: Response) => {
-  const configured = isSupabaseConfigured();
-  let tablesMigrated = false;
-
-  if (configured) {
-    const supabase = getSupabaseClient();
-    if (supabase) {
-      try {
-        const { error } = await supabase.from('cadastros').select('id').limit(1);
-        tablesMigrated = !error;
-      } catch {
-        tablesMigrated = false;
-      }
-    }
-  }
-
+app.get('/api/health', (_req: Request, res: Response) => {
   res.json({
-    status: 'healthy',
-    app: 'Fourcred V2',
+    status: 'ok',
+    application: 'Fourcred V2',
+    backend: 'Express',
     timestamp: new Date().toISOString(),
-    database: {
-      adapter: configured ? 'supabase_postgresql' : 'in_memory_persistence',
-      configured,
-      tablesMigrated,
-      description: configured
-        ? (tablesMigrated
-            ? 'Conectado e tabelas migradas no Supabase PostgreSQL via Service Role Key (Backend)'
-            : 'Conectado ao Supabase, mas a tabela public.cadastros ainda não foi criada. Execute o script /supabase/schema.sql no SQL Editor.')
-        : 'Serviço temporário de desenvolvimento em memória (Configure SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY no .env)',
-    },
   });
 });
 
