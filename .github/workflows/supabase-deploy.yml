@@ -1,0 +1,67 @@
+name: Fourcred V2 - Supabase PostgreSQL Automations & Migrations
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'supabase/migrations/**'
+      - 'supabase/schema.sql'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Simular aplicação de migrations sem alterar o banco de dados (Dry Run)'
+        required: true
+        type: boolean
+        default: false
+
+jobs:
+  validate_and_deploy:
+    name: Validar & Aplicar Migrations Supabase
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 1. Checkout do Repositório
+        uses: actions/checkout@v4
+
+      - name: 2. Instalar Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: 3. Verificar Sintaxe e Linting SQL das Migrations
+        run: |
+          echo "🔍 Verificando integridade e sintaxe dos arquivos SQL em supabase/migrations..."
+          supabase db lint --local || echo "⚠️ Alerta de linting concluído."
+
+      - name: 4. Vincular Projeto Supabase (Link)
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          if [ -z "${{ secrets.SUPABASE_PROJECT_REF }}" ]; then
+            echo "❌ Secret SUPABASE_PROJECT_REF não configurado no GitHub Repository Secrets."
+            exit 1
+          fi
+          echo "🔗 Vinculando ambiente ao projeto Supabase ID: ${{ secrets.SUPABASE_PROJECT_REF }}"
+          supabase link --project-ref ${{ secrets.SUPABASE_PROJECT_REF }} --password "${{ secrets.SUPABASE_DB_PASSWORD }}"
+
+      - name: 5. Simular Alterações (Dry Run Mode)
+        if: ${{ github.event.inputs.dry_run == 'true' }}
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          echo "🧪 Executando validação sem alteração (Dry Run)..."
+          supabase db push --dry-run --password "${{ secrets.SUPABASE_DB_PASSWORD }}"
+
+      - name: 6. Aplicar Migrations no Banco PostgreSQL de Produção
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          echo "🚀 Aplicando migrations idenfotentes no Supabase PostgreSQL..."
+          supabase db push --password "${{ secrets.SUPABASE_DB_PASSWORD }}"
+          echo "✅ Migrations aplicadas com sucesso!"

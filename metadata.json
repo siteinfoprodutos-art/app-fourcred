@@ -1,0 +1,7 @@
+{
+  "name": "Fourcred V2",
+  "description": "Plataforma de crédito imobiliário, esteira de propostas e mesa de gestão de crédito da Fourcred.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
