@@ -40,6 +40,30 @@ export const getSupabaseClient = (): SupabaseClient | null => {
   return supabaseInstance;
 };
 
+const getSupabaseAnonKey = (): string | undefined => {
+  return (
+    process.env.SUPABASE_ANON_KEY ||
+    process.env.VITE_SUPABASE_ANON_KEY ||
+    process.env.SUPABASE_PUBLISHABLE_KEY
+  )?.trim();
+};
+
+export const getSupabaseAuthClient = (): SupabaseClient | null => {
+  const url = getSupabaseUrl();
+  const anonKey = getSupabaseAnonKey() || getSupabaseServiceKey();
+
+  if (!url || !anonKey) {
+    return null;
+  }
+
+  return createClient(url, anonKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  });
+};
+
 export const getAuthenticatedSupabaseClient = (userToken: string): SupabaseClient | null => {
   const url = getSupabaseUrl();
   const key = getSupabaseServiceKey();
