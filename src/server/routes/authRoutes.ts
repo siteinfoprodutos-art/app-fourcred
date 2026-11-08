@@ -5,7 +5,7 @@ import { logServerAction, logServerError, maskEmailForLog } from '../utils/logge
 
 const router = Router();
 
-// POST /api/auth/login - Admin Login with Email and Password
+// POST /api/auth/login - Admin Login with Email and Password (Strict Supabase Auth signInWithPassword)
 router.post('/login', async (req: Request, res: Response) => {
   const { email, password } = req.body;
 
@@ -29,43 +29,14 @@ router.post('/login', async (req: Request, res: Response) => {
     }
 
     try {
-      // 1. Try standard Supabase Auth signInWithPassword
+      // Authenticate exclusively against Supabase Auth using signInWithPassword
       const { data: authData, error: authError } = await authClient.auth.signInWithPassword({
         email: cleanEmail,
         password,
       });
 
-      let authUid: string | null = null;
-      let authUserEmail: string = cleanEmail;
-
-      if (!authError && authData?.session && authData?.user) {
-        authUid = authData.user.id;
-        authUserEmail = authData.user.email || cleanEmail;
-      } else {
-        // Fallback: If signInWithPassword failed (e.g. missing anon key in environment),
-        // find user in Supabase Auth first, then verify active admin record by user_id.
-        const { data: listUsersData } = await supabase.auth.admin.listUsers();
-        const targetAuthUser = listUsersData?.users?.find(
-          (u) => u.email?.toLowerCase() === cleanEmail
-        );
-
-        if (targetAuthUser) {
-          const { data: adminRecordCheck } = await supabase
-            .from('administradores')
-            .select('*')
-            .eq('user_id', targetAuthUser.id)
-            .eq('ativo', true)
-            .maybeSingle();
-
-          if (adminRecordCheck) {
-            authUid = targetAuthUser.id;
-            authUserEmail = targetAuthUser.email || cleanEmail;
-          }
-        }
-      }
-
-      if (!authUid) {
-        logServerAction('ADMIN_LOGIN_FAILED', { email: maskEmailForLog(cleanEmail), reason: authError?.message || 'Invalid credentials' });
+      if (authError || !authData.session || !authData.user) {
+        logServerAction('ADMIN_LOGIN_FAILED', { email: maskEmailForLog(cleanEmail), reason: authError?.message || 'Invalid login credentials' });
         res.status(401).json({
           error: 'Credenciais inválidas.',
           message: authError?.message || 'E-mail ou senha incorretos.',
@@ -74,7 +45,9 @@ router.post('/login', async (req: Request, res: Response) => {
         return;
       }
 
-      // Verify active admin in 'administradores' table
+      const authUid = authData.user.id;
+
+      // Verify active admin in 'administradores' table linked to auth.uid()
       const { data: adminRecord, error: adminError } = await supabase
         .from('administradores')
         .select('*')
@@ -86,19 +59,19 @@ router.post('/login', async (req: Request, res: Response) => {
         logServerAction('LOGIN_FORBIDDEN_NOT_ADMIN', { authUid, email: maskEmailForLog(cleanEmail) });
         res.status(403).json({
           error: 'Acesso negado.',
-          message: 'O usuário autenticado não possui cadastro de administrador ativo na Mesa de Crédito.',
+          message: 'O usuário autenticado não possui privilégios de administrador ativo na Mesa de Crédito.',
           code: 'FORBIDDEN_NOT_ADMIN',
         });
         return;
       }
 
-      // Log access audit
+      // Log access audit using real historico_acessos schema (user_id, evento, ip_address, user_agent, detalhes)
       try {
         await supabase.from('historico_acessos').insert([
           {
-            administrador_id: adminRecord.id,
-            acao: 'LOGIN_ADMINISTRATIVO',
-            ip: req.ip || req.headers['x-forwarded-for'] || null,
+            user_id: authUid,
+            evento: 'LOGIN_ADMINISTRATIVO',
+            ip_address: req.ip || (req.headers['x-forwarded-for'] as string) || null,
             user_agent: req.headers['user-agent'] || null,
             detalhes: { email: cleanEmail },
           },
@@ -111,18 +84,16 @@ router.post('/login', async (req: Request, res: Response) => {
 
       res.json({
         success: true,
-        token: authData?.session?.access_token || `admin-fallback-token-${authUid}`,
-        refreshToken: authData?.session?.refresh_token || null,
-        expiresAt: authData?.session?.expires_at || Math.floor(Date.now() / 1000) + 86400,
+        token: authData.session.access_token,
+        refreshToken: authData.session.refresh_token,
+        expiresAt: authData.session.expires_at,
         user: {
-          id: authUid,
-          email: authUserEmail,
+          id: authData.user.id,
+          email: authData.user.email,
         },
         adminInfo: {
           id: adminRecord.id,
           nome: adminRecord.nome,
-          email: adminRecord.email,
-          cargo: adminRecord.cargo,
         },
         isDevMode: false,
       });
@@ -147,8 +118,6 @@ router.post('/login', async (req: Request, res: Response) => {
     adminInfo: {
       id: 'dev-admin-id',
       nome: 'Admin Gestor (Modo Dev)',
-      email: cleanEmail,
-      cargo: 'Admin Gestor (Desenvolvimento)',
     },
     isDevMode: true,
     message: 'Login realizado em modo de desenvolvimento temporário. Para produção, configure SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY no .env',

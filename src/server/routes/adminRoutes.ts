@@ -285,9 +285,9 @@ router.post('/exportacoes/historico', requireAdminAuth, async (req: Request, res
       try {
         await supabaseAdmin.from('historico_acessos').insert([
           {
-            administrador_id: adminId || null,
-            acao: formato === 'excel' ? 'EXPORTACAO_RELATORIO_EXCEL' : 'EXPORTACAO_RELATORIO_PDF',
-            ip: req.ip || (req.headers['x-forwarded-for'] as string) || null,
+            user_id: userId || null,
+            evento: formato === 'excel' ? 'EXPORTACAO_RELATORIO_EXCEL' : 'EXPORTACAO_RELATORIO_PDF',
+            ip_address: req.ip || (req.headers['x-forwarded-for'] as string) || null,
             user_agent: req.headers['user-agent'] || null,
             detalhes: {
               formato,

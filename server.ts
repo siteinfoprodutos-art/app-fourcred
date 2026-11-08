@@ -14,6 +14,7 @@ import { proposalRateLimiter } from './src/server/middleware/rateLimiter.ts';
 import { validateProposalSubmission } from './src/server/middleware/validateProposal.ts';
 import { requireAdminAuth } from './src/server/middleware/adminAuth.ts';
 import authRoutes from './src/server/routes/authRoutes.ts';
+import adminRoutes from './src/server/routes/adminRoutes.ts';
 import { logServerAction, logServerError, maskCPFForLog } from './src/server/utils/logger.ts';
 
 // Load environment variables from .env file
@@ -29,6 +30,8 @@ app.use(express.json({ limit: '10mb' }));
 
 // Mount Auth routes (/api/auth/login, /api/auth/logout, /api/auth/me)
 app.use('/api/auth', authRoutes);
+// Mount Admin routes (/api/admin/dashboard, etc.)
+app.use('/api/admin', adminRoutes);
 
 // Initial seed proposals (used in development when Supabase is not yet connected)
 const INITIAL_PROPOSALS = [
@@ -594,14 +597,14 @@ app.post('/api/reports/log-export', requireAdminAuth, async (req: Request, res: 
 });
 
 async function startServer() {
-  if (process.env.NODE_ENV !== 'production') {
+  if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
     const { createServer } = await import('vite');
     const vite = await createServer({
       server: { middlewareMode: true },
       appType: 'spa',
     });
     app.use(vite.middlewares);
-  } else {
+  } else if (!process.env.VERCEL) {
     const distPath = path.resolve(__dirname, 'dist');
     app.use(express.static(distPath));
     app.get('*', (_req: Request, res: Response) => {
@@ -609,15 +612,21 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Fourcred V2 full-stack server running on http://0.0.0.0:${PORT}`);
-    if (isSupabaseConfigured()) {
-      console.log('✅ Supabase PostgreSQL e Auth conectados com sucesso.');
-    } else {
-      console.log('ℹ️  Supabase não configurado. Modo de desenvolvimento temporário em memória ativo.');
-      console.log('   Para conectar ao Supabase real, adicione SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY no .env');
-    }
-  });
+  if (!process.env.VERCEL) {
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`Fourcred V2 full-stack server running on http://0.0.0.0:${PORT}`);
+      if (isSupabaseConfigured()) {
+        console.log('✅ Supabase PostgreSQL e Auth conectados com sucesso.');
+      } else {
+        console.log('ℹ️  Supabase não configurado. Modo de desenvolvimento temporário em memória ativo.');
+        console.log('   Para conectar ao Supabase real, adicione SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY no .env');
+      }
+    });
+  }
 }
 
-startServer();
+if (!process.env.VERCEL) {
+  startServer();
+}
+
+export default app;
