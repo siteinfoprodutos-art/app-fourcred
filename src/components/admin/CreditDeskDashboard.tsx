@@ -4,8 +4,10 @@ import { proposalService, AdminProfile } from '../../services/proposalService';
 import { generateProposalPDF } from '../../services/pdfService';
 import { AdminLoginForm } from './AdminLoginForm';
 import { ReportExportModal } from './ReportExportModal';
+import { AdminManagerModal } from './AdminManagerModal';
 import {
   Users,
+  UserPlus,
   TrendingUp,
   Calculator,
   Percent,
@@ -51,6 +53,7 @@ export const CreditDeskDashboard: React.FC = () => {
 
   // Report Modal state
   const [isReportModalOpen, setIsReportModalOpen] = useState<boolean>(false);
+  const [isAdminModalOpen, setIsAdminModalOpen] = useState<boolean>(false);
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState<number>(1);
@@ -390,6 +393,16 @@ export const CreditDeskDashboard: React.FC = () => {
             >
               <FileSpreadsheet className="w-4 h-4" />
               Relatórios PDF & Excel
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setIsAdminModalOpen(true)}
+              className="flex items-center gap-2 px-4 py-2.5 text-xs uppercase tracking-wider font-bold text-[#CBD5E1] hover:text-white rounded-xl border border-[#334155] transition-all bg-[#0F172A] hover:bg-[#334155] cursor-pointer"
+              title="Gerenciar e cadastrar novos administradores do sistema"
+            >
+              <UserPlus className="w-4 h-4 text-[#FF6B1A]" />
+              Gerenciar Gestores
             </button>
 
             <button
@@ -1184,6 +1197,14 @@ export const CreditDeskDashboard: React.FC = () => {
           proposals={proposals}
           onClose={() => setIsReportModalOpen(false)}
           adminName={adminUser?.nome}
+        />
+      )}
+
+      {/* Admin Manager Modal */}
+      {isAdminModalOpen && (
+        <AdminManagerModal
+          onClose={() => setIsAdminModalOpen(false)}
+          currentAdminEmail={adminUser?.email}
         />
       )}
     </div>

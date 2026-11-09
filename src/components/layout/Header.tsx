@@ -1,4 +1,5 @@
 import React from 'react';
+import { Home, ArrowLeft } from 'lucide-react';
 
 interface HeaderProps {
   currentPath: string;
@@ -6,7 +7,8 @@ interface HeaderProps {
 }
 
 export const Header: React.FC<HeaderProps> = ({ currentPath, onNavigate }) => {
-  const isForm = currentPath === '/';
+  const isHome = currentPath === '/';
+  const isCliente = currentPath === '/cliente';
   const isAdmin = currentPath === '/admin';
 
   return (
@@ -16,6 +18,7 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, onNavigate }) => {
         <button
           onClick={() => onNavigate('/')}
           className="relative inline-flex items-baseline pb-2 px-1 group cursor-pointer focus:outline-none"
+          title="Voltar à tela inicial de escolha de perfil"
         >
           <span className="text-[18px] sm:text-[22px] font-black tracking-widest text-white group-hover:text-slate-100 transition-colors">
             FOURCRED
@@ -47,55 +50,96 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, onNavigate }) => {
           </svg>
         </button>
 
-        {/* Mobile quick indicator */}
+        {/* Mobile badge */}
         <div className="flex md:hidden items-center gap-2">
-          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#FF6B1A] to-[#E85D04] shadow-md border border-[#334155] flex items-center justify-center text-xs font-bold text-white">
-            LA
-          </div>
+          {isAdmin ? (
+            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#FF6B1A] to-[#E85D04] shadow-md border border-[#334155] flex items-center justify-center text-xs font-bold text-white">
+              FC
+            </div>
+          ) : (
+            <span className="text-[10px] font-bold px-2.5 py-1 rounded-md bg-[#0F172A] text-[#CBD5E1] border border-[#334155]">
+              {isCliente ? 'Área Cliente' : 'Fourcred V2'}
+            </span>
+          )}
         </div>
       </div>
 
       {/* Main Navigation */}
-      <nav className="flex gap-6 sm:gap-8 text-sm font-semibold w-full justify-center md:w-auto md:justify-start overflow-x-auto pb-1 md:pb-0 hide-scrollbar">
-        <button
-          type="button"
-          onClick={() => onNavigate('/')}
-          className={`cursor-pointer transition-colors whitespace-nowrap text-sm font-bold relative py-1 focus:outline-none ${
-            isForm
-              ? 'text-[#FF6B1A]'
-              : 'text-[#CBD5E1] hover:text-white'
-          }`}
-        >
-          Formulários
-          {isForm && (
-            <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#FF6B1A] rounded-full" />
-          )}
-        </button>
-        <button
-          type="button"
-          onClick={() => onNavigate('/admin')}
-          className={`cursor-pointer transition-colors whitespace-nowrap text-sm font-bold relative py-1 focus:outline-none ${
-            isAdmin
-              ? 'text-[#FF6B1A]'
-              : 'text-[#CBD5E1] hover:text-white'
-          }`}
-        >
-          Dashboard
-          {isAdmin && (
-            <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#FF6B1A] rounded-full" />
-          )}
-        </button>
+      <nav className="flex items-center gap-4 sm:gap-6 text-sm font-semibold w-full justify-center md:w-auto md:justify-start overflow-x-auto pb-1 md:pb-0 hide-scrollbar">
+        {isHome && (
+          <span className="text-xs font-bold text-[#FF6B1A] uppercase tracking-widest bg-[#0F172A] px-3.5 py-1.5 rounded-xl border border-[#334155] shadow-sm">
+            Portal Fourcred
+          </span>
+        )}
+
+        {isAdmin && (
+          <>
+            <button
+              type="button"
+              onClick={() => onNavigate('/')}
+              className="cursor-pointer transition-colors whitespace-nowrap text-xs sm:text-sm font-bold relative py-1 focus:outline-none flex items-center gap-1.5 text-[#CBD5E1] hover:text-white"
+            >
+              <Home className="w-4 h-4 text-[#FF6B1A]" />
+              <span>Início</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onNavigate('/cliente')}
+              className="cursor-pointer transition-colors whitespace-nowrap text-xs sm:text-sm font-bold relative py-1 focus:outline-none text-[#CBD5E1] hover:text-white"
+            >
+              Formulários
+            </button>
+            <button
+              type="button"
+              onClick={() => onNavigate('/admin')}
+              className="cursor-pointer transition-colors whitespace-nowrap text-xs sm:text-sm font-bold relative py-1 focus:outline-none text-[#FF6B1A]"
+            >
+              Dashboard
+              <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#FF6B1A] rounded-full" />
+            </button>
+          </>
+        )}
+
+        {isCliente && (
+          <>
+            <button
+              type="button"
+              onClick={() => onNavigate('/cliente')}
+              className="cursor-pointer transition-colors whitespace-nowrap text-xs sm:text-sm font-bold relative py-1 focus:outline-none text-[#FF6B1A]"
+            >
+              Formulário de Crédito
+              <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#FF6B1A] rounded-full" />
+            </button>
+            <button
+              type="button"
+              onClick={() => onNavigate('/')}
+              className="cursor-pointer transition-colors whitespace-nowrap text-xs text-[#CBD5E1]/70 hover:text-white flex items-center gap-1 bg-[#0F172A] px-3 py-1.5 rounded-xl border border-[#334155]"
+            >
+              <ArrowLeft className="w-3.5 h-3.5 text-[#FF6B1A]" />
+              <span>Trocar Perfil</span>
+            </button>
+          </>
+        )}
       </nav>
 
-      {/* User Badge */}
+      {/* User Badge or Profile Status */}
       <div className="hidden md:flex items-center gap-4 shrink-0">
-        <div className="text-right">
-          <p className="text-xs font-bold text-white leading-tight">LA Soluções</p>
-          <p className="text-[10px] text-[#CBD5E1] font-semibold">Admin Gestor</p>
-        </div>
-        <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#FF6B1A] to-[#E85D04] shadow-md border border-[#334155] flex items-center justify-center text-white font-bold text-xs">
-          LA
-        </div>
+        {isAdmin ? (
+          <>
+            <div className="text-right">
+              <p className="text-xs font-bold text-white leading-tight">Mesa de Crédito</p>
+              <p className="text-[10px] text-[#FF6B1A] font-semibold">Admin Gestor</p>
+            </div>
+            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#FF6B1A] to-[#E85D04] shadow-md border border-[#334155] flex items-center justify-center text-white font-bold text-xs">
+              FC
+            </div>
+          </>
+        ) : (
+          <div className="text-right">
+            <p className="text-xs font-bold text-white leading-tight">Fourcred V2</p>
+            <p className="text-[10px] text-emerald-400 font-semibold">{isCliente ? 'Sessão do Cliente' : 'Selecione o Perfil'}</p>
+          </div>
+        )}
       </div>
     </header>
   );

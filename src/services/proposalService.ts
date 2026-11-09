@@ -289,6 +289,54 @@ class ProposalService {
       // Non-blocking audit log
     }
   }
+
+  // Fetch list of registered administrators
+  async getAdminList(): Promise<AdminProfile[]> {
+    const token = this.getToken();
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    try {
+      const res = await fetch('/api/admin/gestores', { headers });
+      if (res.ok) {
+        const body = await res.json();
+        if (body.success && Array.isArray(body.data)) {
+          return body.data;
+        }
+      }
+    } catch (err: any) {
+      console.warn('[ProposalService getAdminList Error]:', err?.message || err);
+    }
+    return [
+      {
+        id: '1',
+        nome: 'Proprietário',
+        email: 'danielfourcred@gmail.com',
+        cargo: 'Admin Gestor',
+      },
+    ];
+  }
+
+  // Register a new administrator
+  async createAdmin(data: { nome: string; email: string; cargo?: string; password?: string }): Promise<AdminProfile> {
+    const token = this.getToken();
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const res = await fetch('/api/admin/gestores', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(data),
+    });
+
+    const body = await res.json();
+
+    if (!res.ok || !body.success) {
+      throw new Error(body.message || body.error || 'Falha ao cadastrar administrador.');
+    }
+
+    return body.data;
+  }
 }
 
 export const proposalService = new ProposalService();

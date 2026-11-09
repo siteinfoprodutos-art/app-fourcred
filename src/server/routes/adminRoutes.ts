@@ -324,4 +324,177 @@ router.post('/exportacoes/historico', requireAdminAuth, async (req: Request, res
   res.status(200).json({ success: true, message: 'Gravado em modo local.' });
 });
 
+/**
+ * 6. GET /api/admin/gestores
+ * List all active/registered administrators from public.administradores.
+ */
+router.get('/gestores', requireAdminAuth, async (_req: Request, res: Response) => {
+  const supabaseAdmin = getSupabaseClient();
+
+  if (supabaseAdmin) {
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('administradores')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (!error && data) {
+        res.json({ success: true, data });
+        return;
+      }
+    } catch (err: any) {
+      logServerError('GET_GESTORES_ERROR', err);
+    }
+  }
+
+  res.json({
+    success: true,
+    data: [
+      {
+        id: 'dev-admin-id',
+        user_id: 'dev-user-id',
+        nome: 'Admin Gestor Principal',
+        email: 'gestor@fourcred.com.br',
+        cargo: 'Admin Gestor',
+        ativo: true,
+        created_at: new Date().toISOString(),
+      },
+    ],
+  });
+});
+
+/**
+ * 7. POST /api/admin/gestores
+ * Register a new administrator in Supabase Auth & public.administradores.
+ */
+router.post('/gestores', requireAdminAuth, async (req: Request, res: Response) => {
+  const { nome, email, cargo, password } = req.body;
+
+  if (!nome || typeof nome !== 'string' || !email || typeof email !== 'string') {
+    res.status(400).json({ error: 'Nome e E-mail são obrigatórios.' });
+    return;
+  }
+
+  const cleanEmail = email.trim().toLowerCase();
+  const cleanNome = nome.trim();
+  const cleanCargo = cargo && typeof cargo === 'string' ? cargo.trim() : 'Admin Gestor';
+  const adminPassword = password && typeof password === 'string' && password.trim() ? password.trim() : 'fourcred';
+
+  const supabaseAdmin = getSupabaseClient();
+
+  if (supabaseAdmin) {
+    try {
+      let targetUserId: string | null = null;
+
+      // 1. Check if user already exists in Supabase Auth
+      const { data: listData } = await supabaseAdmin.auth.admin.listUsers();
+      const existingAuthUser = listData?.users?.find(
+        (u) => u.email?.toLowerCase() === cleanEmail
+      );
+
+      if (existingAuthUser) {
+        targetUserId = existingAuthUser.id;
+        try {
+          await supabaseAdmin.auth.admin.updateUserById(targetUserId, {
+            password: adminPassword,
+          });
+        } catch {
+          // ignore
+        }
+      } else {
+        // Create user in Supabase Auth
+        const { data: newAuthData, error: createAuthError } = await supabaseAdmin.auth.admin.createUser({
+          email: cleanEmail,
+          password: adminPassword,
+          email_confirm: true,
+          user_metadata: { nome: cleanNome, cargo: cleanCargo },
+        });
+
+        if (createAuthError || !newAuthData?.user) {
+          logServerError('CREATE_ADMIN_AUTH_ERROR', createAuthError);
+          res.status(400).json({
+            error: 'Erro ao criar conta de usuário no Supabase Auth.',
+            message: createAuthError?.message,
+          });
+          return;
+        }
+
+        targetUserId = newAuthData.user.id;
+      }
+
+      // 2. Insert or Upsert into public.administradores
+      const { data: adminRecord, error: adminInsertError } = await supabaseAdmin
+        .from('administradores')
+        .upsert([
+          {
+            user_id: targetUserId,
+            nome: cleanNome,
+            email: cleanEmail,
+            cargo: cleanCargo,
+            ativo: true,
+          },
+        ], { onConflict: 'email' })
+        .select()
+        .single();
+
+      if (adminInsertError || !adminRecord) {
+        logServerError('ADMINISTRADORES_UPSERT_ERROR', adminInsertError);
+        res.status(500).json({
+          error: 'Erro ao cadastrar administrador na tabela administradores.',
+          message: adminInsertError?.message,
+        });
+        return;
+      }
+
+      // Audit log
+      try {
+        await supabaseAdmin.from('historico_acessos').insert([
+          {
+            user_id: req.adminUser?.user_id || null,
+            evento: 'CADASTRO_NOVO_ADMINISTRADOR',
+            ip_address: req.ip || (req.headers['x-forwarded-for'] as string) || null,
+            user_agent: req.headers['user-agent'] || null,
+            detalhes: { novo_admin_email: cleanEmail, novo_admin_id: adminRecord.id },
+          },
+        ]);
+      } catch {
+        // optional audit
+      }
+
+      logServerAction('NEW_ADMIN_REGISTERED', {
+        registeredBy: req.adminUser?.email,
+        newAdmin: cleanEmail,
+      });
+
+      res.status(201).json({
+        success: true,
+        data: adminRecord,
+        message: `Administrador ${cleanNome} cadastrado com sucesso!`,
+      });
+      return;
+    } catch (err: any) {
+      logServerError('REGISTER_ADMIN_EXCEPTION', err);
+      res.status(500).json({ error: 'Erro no servidor ao cadastrar gestor.', details: err?.message });
+      return;
+    }
+  }
+
+  // Development Fallback
+  const devAdmin = {
+    id: `dev-admin-${Date.now()}`,
+    user_id: `dev-user-${Date.now()}`,
+    nome: cleanNome,
+    email: cleanEmail,
+    cargo: cleanCargo,
+    ativo: true,
+    created_at: new Date().toISOString(),
+  };
+
+  res.status(201).json({
+    success: true,
+    data: devAdmin,
+    message: `Administrador ${cleanNome} cadastrado em modo local.`,
+  });
+});
+
 export default router;
