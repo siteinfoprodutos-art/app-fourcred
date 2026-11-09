@@ -92,7 +92,7 @@ export const requireAdminAuth = async (req: Request, res: Response, next: NextFu
       logServerAction('INVALID_TOKEN_PRESENTED', { path: req.path });
       res.status(401).json({
         error: 'Sessão inválida ou expirada.',
-        message: 'Por favor, realize o login novamente na Mesa de Crédito.',
+        message: 'Por favor, realize o login novamente na Área do Gestor.',
         code: 'INVALID_TOKEN',
       });
       return;
@@ -115,7 +115,7 @@ export const requireAdminAuth = async (req: Request, res: Response, next: NextFu
 
       res.status(403).json({
         error: 'Acesso negado.',
-        message: 'O usuário autenticado não possui cadastro de administrador ativo na Mesa de Crédito.',
+        message: 'O usuário autenticado não possui cadastro de administrador ativo na Área do Gestor.',
         code: 'FORBIDDEN_NOT_ADMIN',
       });
       return;

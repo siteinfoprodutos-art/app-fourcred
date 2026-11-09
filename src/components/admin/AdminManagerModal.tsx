@@ -82,7 +82,7 @@ export const AdminManagerModal: React.FC<AdminManagerModalProps> = ({ onClose, c
                 Gestão de Administradores
               </h2>
               <p className="text-xs text-[#CBD5E1]/70 mt-0.5">
-                Cadastre e gerencie os usuários autorizados a acessar a Mesa de Crédito.
+                Cadastre e gerencie os usuários autorizados a acessar o portal.
               </p>
             </div>
           </div>

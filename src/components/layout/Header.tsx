@@ -120,7 +120,7 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, onNavigate }) => {
         {isAdmin ? (
           <>
             <div className="text-right">
-              <p className="text-xs font-bold text-white leading-tight">Mesa de Crédito</p>
+              <p className="text-xs font-bold text-white leading-tight">Painel Gestor</p>
               <p className="text-[10px] text-[#FF6B1A] font-semibold">Admin Gestor</p>
             </div>
             <div className="w-9 h-9 rounded-full bg-gradient-to-br from-[#FF6B1A] to-[#E85D04] shadow-md border border-[#334155] flex items-center justify-center text-white font-bold text-xs">

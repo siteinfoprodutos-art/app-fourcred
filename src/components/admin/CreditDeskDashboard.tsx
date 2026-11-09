@@ -151,17 +151,22 @@ export const CreditDeskDashboard: React.FC = () => {
   };
 
   const handleStatusChange = async (id: string, newStatus: ProposalStatus) => {
+    // Optimistic state update in UI
+    setProposals((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, status: newStatus } : item))
+    );
+    if (selectedProposal && selectedProposal.id === id) {
+      setSelectedProposal({
+        ...selectedProposal,
+        status: newStatus,
+      });
+    }
+
     try {
       await proposalService.updateStatus(id, newStatus);
-      if (selectedProposal && selectedProposal.id === id) {
-        setSelectedProposal({
-          ...selectedProposal,
-          status: newStatus,
-        });
-      }
-      loadProposals();
     } catch (err: any) {
-      alert(`Erro ao atualizar status: ${err?.message || 'Falha de comunicação'}`);
+      alert(`Erro ao salvar status: ${err?.message || 'Falha de comunicação com o backend'}`);
+      loadProposals();
     }
   };
 
@@ -369,7 +374,7 @@ export const CreditDeskDashboard: React.FC = () => {
             <div className="flex flex-wrap items-center gap-2">
               <span className="bg-[#FF6B1A] text-white text-[10px] font-bold px-3 py-1.5 rounded-md uppercase tracking-widest shadow-[0_4px_12px_rgba(255,107,26,0.3)] flex items-center gap-1.5">
                 <ShieldCheck className="w-3.5 h-3.5" />
-                Mesa de Crédito — Área Restrita
+                Área Restrita do Gestor
               </span>
               <span className="bg-[#0F172A] text-[#CBD5E1] border border-[#334155] text-[10px] font-semibold px-2.5 py-1 rounded-md flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
@@ -834,10 +839,10 @@ export const CreditDeskDashboard: React.FC = () => {
                           </div>
                         </td>
 
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="flex items-center gap-1.5 bg-[#0F172A] border border-[#334155] px-2.5 py-1 rounded-lg w-max shadow-sm">
+                        <td className="px-6 py-4 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                          <div className="flex items-center gap-1.5 bg-[#0F172A] border border-[#334155] hover:border-[#FF6B1A] px-2.5 py-1 rounded-lg w-max shadow-sm transition-colors">
                             <span
-                              className={`w-2 h-2 rounded-full ${
+                              className={`w-2 h-2 rounded-full shrink-0 ${
                                 currentStatus === 'Aprovado'
                                   ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]'
                                   : currentStatus === 'Recusado'
@@ -845,9 +850,16 @@ export const CreditDeskDashboard: React.FC = () => {
                                   : 'bg-[#FF6B1A] shadow-[0_0_8px_rgba(255,107,26,0.5)]'
                               }`}
                             />
-                            <span className="text-[10px] font-bold text-[#CBD5E1]">
-                              {currentStatus}
-                            </span>
+                            <select
+                              value={currentStatus}
+                              onChange={(e) => handleStatusChange(item.id, e.target.value as ProposalStatus)}
+                              className="bg-transparent text-[11px] font-bold text-white focus:outline-none cursor-pointer text-xs"
+                            >
+                              <option value="Pendente" className="bg-[#0F172A] text-white">Pendente</option>
+                              <option value="Em Análise" className="bg-[#0F172A] text-white">Em Análise</option>
+                              <option value="Aprovado" className="bg-[#0F172A] text-white">Aprovado</option>
+                              <option value="Recusado" className="bg-[#0F172A] text-white">Recusado</option>
+                            </select>
                           </div>
                         </td>
 

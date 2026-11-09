@@ -239,18 +239,16 @@ class ProposalService {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
-    try {
-      const res = await fetch(`/api/proposals/${id}/status`, {
-        method: 'PATCH',
-        headers,
-        body: JSON.stringify({ status }),
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.message || data.error || 'Erro ao atualizar status');
-      }
-    } catch (err: any) {
-      console.warn('[ProposalService Update Warning]:', err?.message || err);
+    const res = await fetch(`/api/proposals/${id}/status`, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify({ status }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(data.message || data.error || 'Erro ao atualizar status da proposta.');
     }
 
     memoryCache = memoryCache.map((item) => (item.id === id ? { ...item, status } : item));

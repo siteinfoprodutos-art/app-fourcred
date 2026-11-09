@@ -147,7 +147,7 @@ export const AdminLoginForm: React.FC<AdminLoginFormProps> = ({
             {!isPasscodeVerified
               ? 'Acesso à Área de Gestão'
               : authMode === 'login'
-              ? 'Mesa de Crédito Fourcred'
+              ? 'Painel do Gestor Fourcred'
               : 'Cadastrar Novo Gestor'}
           </h2>
           <p className="text-xs text-[#CBD5E1] max-w-xs mx-auto">
@@ -155,7 +155,7 @@ export const AdminLoginForm: React.FC<AdminLoginFormProps> = ({
               ? 'Informe a senha de liberação para acessar a área administrativa.'
               : authMode === 'login'
               ? 'Insira suas credenciais para acessar o painel de operações.'
-              : 'Cadastre um novo administrador autorizado para a Mesa de Crédito.'}
+              : 'Cadastre um novo administrador autorizado para o Portal do Gestor.'}
           </p>
         </div>
 

@@ -107,7 +107,7 @@ router.post('/login', async (req: Request, res: Response) => {
         logServerAction('LOGIN_FORBIDDEN_NOT_ADMIN', { authUid, email: maskEmailForLog(cleanEmail) });
         res.status(403).json({
           error: 'Acesso negado.',
-          message: 'O usuário autenticado não possui privilégios de administrador ativo na Mesa de Crédito.',
+          message: 'O usuário autenticado não possui privilégios de administrador ativo na Área do Gestor.',
           code: 'FORBIDDEN_NOT_ADMIN',
         });
         return;

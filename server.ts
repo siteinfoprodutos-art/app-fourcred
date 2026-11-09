@@ -28,10 +28,13 @@ const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
 app.use(express.json({ limit: '10mb' }));
 
-// Mount Auth routes (/api/auth/login, /api/auth/logout, /api/auth/me)
+// Mount Auth routes (/api/auth/login, /api/auth/register-gestor, /api/auth/logout, /api/auth/me)
 app.use('/api/auth', authRoutes);
-// Mount Admin routes (/api/admin/dashboard, etc.)
+app.use('/auth', authRoutes);
+
+// Mount Admin routes (/api/admin/dashboard, /api/admin/gestores, etc.)
 app.use('/api/admin', adminRoutes);
+app.use('/admin', adminRoutes);
 
 // Initial seed proposals (used in development when Supabase is not yet connected)
 const INITIAL_PROPOSALS = [
@@ -442,41 +445,71 @@ app.patch('/api/proposals/:id/status', requireAdminAuth, async (req: Request, re
   if (supabase) {
     try {
       const dbStatus = normalizeStatusForDb(status);
-      // 1. Try update by codigo_proposta
-      let updateAttempt = await supabase
-        .from('cadastros')
-        .update({ status: dbStatus })
-        .eq('codigo_proposta', id)
-        .select()
-        .maybeSingle();
+      let updatedData: any = null;
 
-      // 2. If not found or column does not exist, try by id (UUID)
-      if (!updateAttempt.data) {
-        updateAttempt = await supabase
+      // 1. Try update by codigo_proposta (e.g. 'FC-882194')
+      try {
+        const try1 = await supabase
           .from('cadastros')
-          .update({ status: dbStatus })
-          .eq('id', id)
+          .update({ status: status })
+          .eq('codigo_proposta', id)
           .select()
           .maybeSingle();
+
+        if (try1.data) updatedData = try1.data;
+      } catch {
+        // ignore
       }
 
-      if (!updateAttempt.error && updateAttempt.data) {
-        const data = updateAttempt.data;
+      // 2. Try update by id column if numeric or UUID
+      if (!updatedData) {
+        try {
+          const try2 = await supabase
+            .from('cadastros')
+            .update({ status: status })
+            .eq('id', id)
+            .select()
+            .maybeSingle();
+
+          if (try2.data) updatedData = try2.data;
+        } catch {
+          // ignore
+        }
+      }
+
+      // 3. Try update using dbStatus (e.g. 'em_analise', 'aprovado')
+      if (!updatedData) {
+        try {
+          const try3 = await supabase
+            .from('cadastros')
+            .update({ status: dbStatus })
+            .eq('codigo_proposta', id)
+            .select()
+            .maybeSingle();
+
+          if (try3.data) updatedData = try3.data;
+        } catch {
+          // ignore
+        }
+      }
+
+      if (updatedData) {
         // Audit log
         try {
           await supabase.from('historico_acessos').insert([
             {
               evento: 'ALTERACAO_STATUS',
               acao: 'ALTERACAO_STATUS',
-              cadastro_id: data.id,
-              detalhes: { novo_status: status },
+              detalhes: { proposta_id: id, novo_status: status },
             },
           ]);
         } catch {
           // optional
         }
 
-        res.json(mapRowToProposalRecord(data));
+        const savedRecord = mapRowToProposalRecord(updatedData);
+        savedRecord.status = status;
+        res.json(savedRecord);
         return;
       }
     } catch (err) {
@@ -484,6 +517,7 @@ app.patch('/api/proposals/:id/status', requireAdminAuth, async (req: Request, re
     }
   }
 
+  // Fallback memory update
   const item = inMemoryProposals.find((p: { id: string }) => p.id === id);
   if (!item) {
     res.status(404).json({ error: 'Proposta não encontrada' });

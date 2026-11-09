@@ -12,11 +12,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onSelectRole }) => {
         
         {/* Splash Header / Hero */}
         <div className="text-center space-y-4 max-w-2xl mx-auto">
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#FF6B1A]/10 border border-[#FF6B1A]/30 text-[#FF6B1A] text-xs font-bold uppercase tracking-widest shadow-lg shadow-[#FF6B1A]/10">
-            <Building2 className="w-4 h-4" />
-            <span>Fourcred V2 — Operações Imobiliárias</span>
-          </div>
-
           <h1 className="text-3xl sm:text-4xl lg:text-5xl font-black text-white tracking-tight">
             Bem-vindo ao Portal <span className="text-[#FF6B1A]">Fourcred</span>
           </h1>
@@ -97,7 +92,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({ onSelectRole }) => {
 
               <div>
                 <h2 className="text-2xl font-black text-white group-hover:text-[#FF6B1A] transition-colors">
-                  Mesa de Crédito (Gestor)
+                  Área do Gestor
                 </h2>
                 <p className="text-xs sm:text-sm text-[#CBD5E1] mt-2 leading-relaxed">
                   Painel de pré-aprovação de crédito, emissão de relatórios regulatórios e gestão de administradores autorizados.
