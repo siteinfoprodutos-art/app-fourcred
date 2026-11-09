@@ -76,6 +76,30 @@ class ProposalService {
     return data;
   }
 
+  // Register a new Gestor directly from Login Screen (Passcode authorized)
+  async registerGestor(data: { nome: string; email: string; password: string; cargo?: string }): Promise<AuthSession> {
+    const res = await fetch('/api/auth/register-gestor', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...data,
+        passcode: 'fourcred',
+      }),
+    });
+
+    const body = await res.json();
+    if (!res.ok) {
+      throw new Error(body.message || body.error || 'Falha ao cadastrar novo gestor.');
+    }
+
+    if (body.token) {
+      sessionStorage.setItem(AUTH_TOKEN_KEY, body.token);
+      sessionStorage.setItem(AUTH_USER_KEY, JSON.stringify(body.adminInfo));
+    }
+
+    return body;
+  }
+
   // Admin Logout
   async logout(): Promise<void> {
     const token = this.getToken();

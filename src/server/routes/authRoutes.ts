@@ -64,12 +64,10 @@ router.post('/login', async (req: Request, res: Response) => {
               {
                 user_id: targetUser.id,
                 nome: cleanEmail.split('@')[0].toUpperCase() || 'Admin Gestor',
-                email: cleanEmail,
-                cargo: 'Admin Gestor',
                 ativo: true,
               },
             ],
-            { onConflict: 'email' }
+            { onConflict: 'user_id' }
           );
 
           // Retry signInWithPassword
@@ -171,6 +169,154 @@ router.post('/login', async (req: Request, res: Response) => {
     },
     isDevMode: true,
     message: 'Login realizado em modo de desenvolvimento temporário. Para produção, configure SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY no .env',
+  });
+});
+
+// POST /api/auth/register-gestor - Register a new Gestor / Administrator (Passcode protected)
+router.post('/register-gestor', async (req: Request, res: Response) => {
+  const { nome, email, password, cargo, passcode } = req.body;
+
+  if (!email || typeof email !== 'string' || !password || typeof password !== 'string' || !nome || typeof nome !== 'string') {
+    res.status(400).json({
+      error: 'Nome, e-mail e senha são obrigatórios para o cadastro de gestor.',
+      code: 'MISSING_FIELDS',
+    });
+    return;
+  }
+
+  if (passcode && String(passcode).trim().toLowerCase() !== 'fourcred') {
+    res.status(403).json({
+      error: 'Senha de liberação de gestor inválida.',
+      code: 'INVALID_PASSCODE',
+    });
+    return;
+  }
+
+  const cleanEmail = email.trim().toLowerCase();
+  const cleanNome = nome.trim();
+  const cleanCargo = cargo && typeof cargo === 'string' && cargo.trim() ? cargo.trim() : 'Admin Gestor';
+
+  if (isSupabaseConfigured()) {
+    const supabase = getSupabaseClient();
+    const authClient = getSupabaseAuthClient();
+    if (!supabase || !authClient) {
+      res.status(500).json({ error: 'Erro de conexão com o banco de dados Supabase.' });
+      return;
+    }
+
+    try {
+      let targetUserId: string | null = null;
+
+      // 1. Check if user already exists in Supabase Auth
+      const { data: listData } = await supabase.auth.admin.listUsers();
+      let targetUser = listData?.users?.find((u) => u.email?.toLowerCase() === cleanEmail);
+
+      if (targetUser) {
+        targetUserId = targetUser.id;
+        // Update password if existing
+        try {
+          await supabase.auth.admin.updateUserById(targetUserId, { password });
+        } catch {
+          // ignore
+        }
+      } else {
+        // Create user in Supabase Auth
+        const { data: newAuthUser, error: createAuthError } = await supabase.auth.admin.createUser({
+          email: cleanEmail,
+          password,
+          email_confirm: true,
+          user_metadata: { nome: cleanNome, cargo: cleanCargo },
+        });
+
+        if (createAuthError || !newAuthUser?.user) {
+          logServerError('REGISTER_GESTOR_AUTH_ERROR', createAuthError);
+          res.status(400).json({
+            error: 'Não foi possível cadastrar a conta de gestor no Supabase Auth.',
+            message: createAuthError?.message || 'Erro ao criar conta.',
+          });
+          return;
+        }
+
+        targetUser = newAuthUser.user;
+        targetUserId = targetUser.id;
+      }
+
+      // 2. Insert or update in public.administradores
+      const { data: adminRecord, error: adminInsertError } = await supabase
+        .from('administradores')
+        .upsert(
+          [
+            {
+              user_id: targetUserId,
+              nome: cleanNome,
+              ativo: true,
+            },
+          ],
+          { onConflict: 'user_id' }
+        )
+        .select()
+        .single();
+
+      if (adminInsertError || !adminRecord) {
+        logServerError('REGISTER_GESTOR_UPSERT_ERROR', adminInsertError);
+        res.status(500).json({
+          error: 'Falha ao salvar dados do gestor na tabela administradores.',
+          message: adminInsertError?.message,
+        });
+        return;
+      }
+
+      // 3. Auto Sign-In with password
+      const { data: authData, error: signInError } = await authClient.auth.signInWithPassword({
+        email: cleanEmail,
+        password,
+      });
+
+      if (signInError || !authData?.session) {
+        res.status(201).json({
+          success: true,
+          message: `Gestor ${cleanNome} cadastrado com sucesso! Efetue o login com e-mail e senha.`,
+          adminInfo: { id: adminRecord.id, nome: adminRecord.nome, email: cleanEmail, cargo: 'Admin Gestor' },
+        });
+        return;
+      }
+
+      logServerAction('REGISTER_GESTOR_SUCCESS', { adminId: adminRecord.id, email: maskEmailForLog(cleanEmail) });
+
+      res.status(201).json({
+        success: true,
+        token: authData.session.access_token,
+        refreshToken: authData.session.refresh_token,
+        expiresAt: authData.session.expires_at,
+        user: {
+          id: authData.user.id,
+          email: authData.user.email,
+        },
+        adminInfo: {
+          id: adminRecord.id,
+          nome: adminRecord.nome,
+          email: adminRecord.email || cleanEmail,
+          cargo: 'Admin Gestor',
+        },
+        isDevMode: false,
+        message: `Gestor ${cleanNome} cadastrado e autenticado com sucesso!`,
+      });
+      return;
+    } catch (err: any) {
+      logServerError('REGISTER_GESTOR_EXCEPTION', err);
+      res.status(500).json({ error: 'Erro no servidor ao cadastrar gestor.', details: err?.message });
+      return;
+    }
+  }
+
+  // Fallback Dev Mode
+  res.status(201).json({
+    success: true,
+    token: `dev-session-token-${Date.now()}`,
+    user: { id: 'dev-user-id', email: cleanEmail },
+    adminInfo: { id: `dev-admin-${Date.now()}`, nome: cleanNome, email: cleanEmail, cargo: cleanCargo },
+    isDevMode: true,
+    message: `Gestor ${cleanNome} cadastrado em modo de desenvolvimento.`,
   });
 });
 

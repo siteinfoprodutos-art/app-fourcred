@@ -84,13 +84,6 @@ export const Header: React.FC<HeaderProps> = ({ currentPath, onNavigate }) => {
             </button>
             <button
               type="button"
-              onClick={() => onNavigate('/cliente')}
-              className="cursor-pointer transition-colors whitespace-nowrap text-xs sm:text-sm font-bold relative py-1 focus:outline-none text-[#CBD5E1] hover:text-white"
-            >
-              Formulários
-            </button>
-            <button
-              type="button"
               onClick={() => onNavigate('/admin')}
               className="cursor-pointer transition-colors whitespace-nowrap text-xs sm:text-sm font-bold relative py-1 focus:outline-none text-[#FF6B1A]"
             >

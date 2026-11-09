@@ -333,13 +333,35 @@ router.get('/gestores', requireAdminAuth, async (_req: Request, res: Response) =
 
   if (supabaseAdmin) {
     try {
-      const { data, error } = await supabaseAdmin
+      const { data: rows, error } = await supabaseAdmin
         .from('administradores')
         .select('*')
         .order('created_at', { ascending: false });
 
-      if (!error && data) {
-        res.json({ success: true, data });
+      if (!error && rows) {
+        let usersMap: Record<string, string> = {};
+        try {
+          const { data: authUsersData } = await supabaseAdmin.auth.admin.listUsers();
+          if (authUsersData?.users) {
+            authUsersData.users.forEach((u) => {
+              if (u.email) usersMap[u.id] = u.email;
+            });
+          }
+        } catch {
+          // ignore
+        }
+
+        const mapped = rows.map((r) => ({
+          id: r.id || r.user_id,
+          user_id: r.user_id,
+          nome: r.nome || 'Admin Gestor',
+          email: usersMap[r.user_id] || 'gestor@fourcred.com.br',
+          cargo: 'Admin Gestor',
+          ativo: r.ativo !== false,
+          created_at: r.created_at || new Date().toISOString(),
+        }));
+
+        res.json({ success: true, data: mapped });
         return;
       }
     } catch (err: any) {
@@ -429,11 +451,9 @@ router.post('/gestores', requireAdminAuth, async (req: Request, res: Response) =
           {
             user_id: targetUserId,
             nome: cleanNome,
-            email: cleanEmail,
-            cargo: cleanCargo,
             ativo: true,
           },
-        ], { onConflict: 'email' })
+        ], { onConflict: 'user_id' })
         .select()
         .single();
 

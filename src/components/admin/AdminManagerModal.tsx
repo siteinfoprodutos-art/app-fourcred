@@ -17,7 +17,6 @@ export const AdminManagerModal: React.FC<AdminManagerModalProps> = ({ onClose, c
   // Form State
   const [nome, setNome] = useState('');
   const [email, setEmail] = useState('');
-  const [cargo, setCargo] = useState('Gestor de Crédito');
   const [password, setPassword] = useState('fourcred');
 
   const loadAdmins = async () => {
@@ -52,14 +51,13 @@ export const AdminManagerModal: React.FC<AdminManagerModalProps> = ({ onClose, c
       const newAdmin = await proposalService.createAdmin({
         nome: nome.trim(),
         email: email.trim().toLowerCase(),
-        cargo: cargo.trim(),
+        cargo: 'Admin Gestor',
         password: password.trim() || 'fourcred',
       });
 
       setSuccessMsg(`Administrador "${newAdmin.nome}" cadastrado com sucesso!`);
       setNome('');
       setEmail('');
-      setCargo('Gestor de Crédito');
       setPassword('fourcred');
       loadAdmins();
     } catch (err: any) {
@@ -151,22 +149,6 @@ export const AdminManagerModal: React.FC<AdminManagerModalProps> = ({ onClose, c
                   placeholder="gestor@fourcred.com.br"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full bg-[#1E293B] border border-[#334155] rounded-xl py-2.5 pl-9 pr-3 text-xs text-white focus:outline-none focus:border-[#FF6B1A]"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-[#CBD5E1] mb-1">
-                Cargo / Função:
-              </label>
-              <div className="relative">
-                <Briefcase className="w-4 h-4 text-[#CBD5E1]/40 absolute left-3 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  placeholder="Gestor de Crédito"
-                  value={cargo}
-                  onChange={(e) => setCargo(e.target.value)}
                   className="w-full bg-[#1E293B] border border-[#334155] rounded-xl py-2.5 pl-9 pr-3 text-xs text-white focus:outline-none focus:border-[#FF6B1A]"
                 />
               </div>
