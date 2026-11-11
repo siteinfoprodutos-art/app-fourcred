@@ -98,6 +98,33 @@ const formatDate = (dateStr?: string): string => {
 };
 
 /**
+ * Draw Vector FOURCRED Logo ($ symbol & curved arrow)
+ */
+const drawFourcredLogo = (doc: jsPDF, x: number, y: number, isDarkBg: boolean = true) => {
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(20);
+  if (isDarkBg) {
+    doc.setTextColor(255, 255, 255);
+  } else {
+    doc.setTextColor(15, 23, 42); // #0F172A Navy
+  }
+  doc.text('FOURCRED', x, y);
+
+  const textWidth = doc.getTextWidth('FOURCRED');
+
+  // Orange $ Symbol
+  doc.setTextColor(255, 107, 26); // #FF6B1A
+  doc.text('$', x + textWidth + 1, y);
+
+  // Curved underline accent arrow
+  doc.setDrawColor(255, 107, 26);
+  doc.setLineWidth(0.8);
+  doc.line(x, y + 2.5, x + textWidth + 6, y + 2.5);
+  doc.line(x + textWidth + 4, y + 1, x + textWidth + 6, y + 2.5);
+  doc.line(x + textWidth + 4, y + 4, x + textWidth + 6, y + 2.5);
+};
+
+/**
  * Generate Corporate PDF Report using jsPDF + jspdf-autotable
  */
 export const generateProposalsPDFReport = (
@@ -106,49 +133,61 @@ export const generateProposalsPDFReport = (
   adminName: string = 'Administrador Fourcred'
 ): void => {
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+  const pageWidth = doc.internal.pageSize.width; // 297mm
+  const pageHeight = doc.internal.pageSize.height; // 210mm
+  const leftX = 14;
+  const rightX = pageWidth - 14;
   const totalVolume = proposals.reduce((acc, p) => acc + Number(p.payload.financingValue || 0), 0);
   const nowFormatted = formatDate(new Date().toISOString());
 
-  // Colors
-  const orangeColor: [number, number, number] = [255, 107, 26]; // #FF6B1A
-  const darkNavy: [number, number, number] = [15, 23, 42]; // #0F172A
-  const textGray: [number, number, number] = [100, 116, 139];
+  // Top Header Banner (Dark Navy)
+  doc.setFillColor(15, 23, 42); // #0F172A
+  doc.rect(0, 0, pageWidth, 28, 'F');
 
-  // Header Bar
-  doc.setFillColor(...orangeColor);
-  doc.rect(0, 0, doc.internal.pageSize.width, 4, 'F');
+  // Orange Accent Line below banner
+  doc.setFillColor(255, 107, 26); // #FF6B1A
+  doc.rect(0, 28, pageWidth, 2, 'F');
 
-  // Corporate Brand Header
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(20);
-  doc.setTextColor(...darkNavy);
-  doc.text('FOURCRED', 14, 16);
+  // Brand Vector Logo
+  drawFourcredLogo(doc, leftX, 17, true);
 
-  doc.setFontSize(10);
   doc.setFont('helvetica', 'normal');
-  doc.setTextColor(...orangeColor);
-  doc.text('SOLUÇÕES DE CRÉDITO IMOBILIÁRIO — RELATÓRIO EXECUTIVO', 56, 15);
+  doc.setFontSize(7.5);
+  doc.setTextColor(203, 213, 225);
+  doc.text('SOLUÇÕES FINANCEIRAS & CRÉDITO IMOBILIÁRIO — RELATÓRIO EXECUTIVO', leftX, 23);
 
+  // Corporate Contact Header (Right aligned)
   doc.setFontSize(8);
-  doc.setTextColor(...textGray);
-  doc.text(`Gerado por: ${adminName} | Data de Emissão: ${nowFormatted}`, 14, 22);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(255, 255, 255);
+  doc.text('Central de Atendimento Fourcred', rightX, 10, { align: 'right' });
 
-  // Divider Line
-  doc.setDrawColor(226, 232, 240);
-  doc.setLineWidth(0.5);
-  doc.line(14, 25, doc.internal.pageSize.width - 14, 25);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.5);
+  doc.setTextColor(203, 213, 225);
+  doc.text('Tel: (11) 4003-4921 | WhatsApp: (11) 98765-4321', rightX, 15, { align: 'right' });
+  doc.text('E-mail: contato@fourcred.com.br', rightX, 19.5, { align: 'right' });
+  doc.text('Website: www.fourcred.com.br', rightX, 24, { align: 'right' });
 
   // Report Summary Card
   doc.setFillColor(248, 250, 252);
-  doc.roundedRect(14, 28, doc.internal.pageSize.width - 28, 20, 2, 2, 'F');
+  doc.roundedRect(leftX, 34, pageWidth - 28, 18, 2, 2, 'F');
   doc.setDrawColor(203, 213, 225);
-  doc.roundedRect(14, 28, doc.internal.pageSize.width - 28, 20, 2, 2, 'D');
+  doc.roundedRect(leftX, 34, pageWidth - 28, 18, 2, 2, 'D');
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9);
-  doc.setTextColor(...darkNavy);
-  doc.text(`Total de Cadastros: ${proposals.length}`, 18, 35);
-  doc.text(`Volume Financiado Acumulado: ${formatCurrency(totalVolume)}`, 18, 42);
+  doc.setTextColor(15, 23, 42);
+  doc.text(`Total de Cadastros: ${proposals.length}`, leftX + 4, 41);
+
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(255, 107, 26);
+  doc.text(`Volume Financiado Acumulado: ${formatCurrency(totalVolume)}`, leftX + 4, 47);
+
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.5);
+  doc.setTextColor(100, 116, 139);
+  doc.text(`Gerado por: ${adminName} | Data de Emissão: ${nowFormatted}`, 130, 41);
 
   // Active Filters Text
   const filterDescParts: string[] = [];
@@ -165,10 +204,7 @@ export const generateProposalsPDFReport = (
 
   const filterSummary = filterDescParts.length > 0 ? filterDescParts.join(' | ') : 'Todos os cadastros sem restrição';
 
-  doc.setFont('helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.setTextColor(...textGray);
-  doc.text(`Filtros Aplicados: ${filterSummary}`, 150, 35, { maxWidth: 130 });
+  doc.text(`Filtros Aplicados: ${filterSummary}`, 130, 47, { maxWidth: 150 });
 
   // Prepare Table Data
   const tableHeaders = [
@@ -207,7 +243,7 @@ export const generateProposalsPDFReport = (
 
   // Render Table with autoTable
   autoTable(doc, {
-    startY: 52,
+    startY: 56,
     head: [tableHeaders],
     body: tableRows,
     theme: 'grid',
@@ -244,20 +280,24 @@ export const generateProposalsPDFReport = (
       const pageCount = (doc.internal as any).getNumberOfPages();
       const currentPage = data.pageNumber;
 
+      doc.setDrawColor(226, 232, 240);
+      doc.setLineWidth(0.4);
+      doc.line(leftX, pageHeight - 12, rightX, pageHeight - 12);
+
       doc.setFontSize(7.5);
       doc.setFont('helvetica', 'normal');
       doc.setTextColor(148, 163, 184);
 
       // Left footer
       doc.text(
-        'Fourcred V2 — Relatório Oficial de Operações — Documento Estritamente Confidencial',
-        14,
-        doc.internal.pageSize.height - 8
+        'Fourcred Soluções Financeiras Ltda. • Relatório Oficial de Operações • Documento Confidencial',
+        leftX,
+        pageHeight - 7
       );
 
       // Right footer page number
       const pageText = `Página ${currentPage} de ${pageCount}`;
-      doc.text(pageText, doc.internal.pageSize.width - 14 - doc.getTextWidth(pageText), doc.internal.pageSize.height - 8);
+      doc.text(pageText, rightX - doc.getTextWidth(pageText), pageHeight - 7);
     },
   });
 
