@@ -251,9 +251,25 @@ export const AdminLoginForm: React.FC<AdminLoginFormProps> = ({
               </div>
 
               {error && (
-                <div className="p-3.5 bg-red-500/10 border border-red-500/30 rounded-xl flex items-start gap-2.5 text-xs text-red-400 animate-in fade-in">
-                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-400" />
-                  <span className="font-semibold leading-relaxed">{error}</span>
+                <div className="p-3.5 bg-red-500/10 border border-red-500/30 rounded-xl flex flex-col gap-2 text-xs text-red-400 animate-in fade-in">
+                  <div className="flex items-start gap-2.5">
+                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-400" />
+                    <span className="font-semibold leading-relaxed">{error}</span>
+                  </div>
+                  {authMode === 'login' && email.trim() && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRegEmail(email.trim());
+                        setAuthMode('register');
+                        setError(null);
+                        setSuccessMessage(null);
+                      }}
+                      className="self-start ml-6 text-[11px] font-bold text-[#FF6B1A] hover:underline cursor-pointer"
+                    >
+                      Cadastrar {email.trim()} como Novo Gestor →
+                    </button>
+                  )}
                 </div>
               )}
 
@@ -275,7 +291,10 @@ export const AdminLoginForm: React.FC<AdminLoginFormProps> = ({
                     placeholder="gestor@fourcred.com.br"
                     icon={<Mail className="w-4 h-4" />}
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      if (error) setError(null);
+                    }}
                   />
 
                   <InputField
@@ -286,7 +305,10 @@ export const AdminLoginForm: React.FC<AdminLoginFormProps> = ({
                     placeholder="••••••••"
                     icon={<Lock className="w-4 h-4" />}
                     value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    onChange={(e) => {
+                      setPassword(e.target.value);
+                      if (error) setError(null);
+                    }}
                   />
 
                   <button

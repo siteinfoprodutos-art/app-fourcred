@@ -5,6 +5,19 @@ import { logServerAction, logServerError, maskEmailForLog } from '../utils/logge
 
 const router = Router();
 
+async function findAuthUserByEmail(supabase: any, cleanEmail: string) {
+  let page = 1;
+  const perPage = 1000;
+  while (true) {
+    const { data, error } = await supabase.auth.admin.listUsers({ page, perPage });
+    if (error || !data?.users?.length) return undefined;
+    const found = data.users.find((u: any) => u.email?.toLowerCase() === cleanEmail);
+    if (found) return found;
+    if (data.users.length < perPage) return undefined;
+    page += 1;
+  }
+}
+
 // POST /api/auth/login - Admin Login with Email and Password (Strict Supabase Auth signInWithPassword)
 router.post('/login', async (req: Request, res: Response) => {
   const { email, password } = req.body;
@@ -37,8 +50,7 @@ router.post('/login', async (req: Request, res: Response) => {
 
       // 2. If password is 'fourcred' and initial login failed, auto-sync/provision the user password in Supabase Auth
       if ((authError || !authData?.session) && password.trim().toLowerCase() === 'fourcred') {
-        const { data: listData } = await supabase.auth.admin.listUsers();
-        let targetUser = listData?.users?.find((u) => u.email?.toLowerCase() === cleanEmail);
+        let targetUser = await findAuthUserByEmail(supabase, cleanEmail);
 
         if (!targetUser) {
           // Provision account in Supabase Auth if it does not exist yet
@@ -49,9 +61,12 @@ router.post('/login', async (req: Request, res: Response) => {
           });
           targetUser = newAuthUser?.user || undefined;
         } else {
-          // Update password to 'fourcred'
+          // Update password to 'fourcred' and ensure email is confirmed
           try {
-            await supabase.auth.admin.updateUserById(targetUser.id, { password: 'fourcred' });
+            await supabase.auth.admin.updateUserById(targetUser.id, {
+              password: 'fourcred',
+              email_confirm: true,
+            });
           } catch {
             // ignore
           }
@@ -84,10 +99,46 @@ router.post('/login', async (req: Request, res: Response) => {
       }
 
       if (authError || !authData?.session || !authData?.user) {
-        logServerAction('ADMIN_LOGIN_FAILED', { email: maskEmailForLog(cleanEmail), reason: authError?.message || 'Invalid login credentials' });
+        const existingAuthUser = await findAuthUserByEmail(supabase, cleanEmail);
+
+        // If user exists in Auth but email was never confirmed, confirm and retry once
+        if (existingAuthUser && existingAuthUser.id && !existingAuthUser.email_confirmed_at) {
+          try {
+            await supabase.auth.admin.updateUserById(existingAuthUser.id, { email_confirm: true });
+            const confirmedRetry = await authClient.auth.signInWithPassword({
+              email: cleanEmail,
+              password,
+            });
+            if (!confirmedRetry.error && confirmedRetry.data?.session && confirmedRetry.data?.user) {
+              authData = confirmedRetry.data;
+              authError = null;
+            }
+          } catch {
+            // ignore
+          }
+        }
+      }
+
+      if (authError || !authData?.session || !authData?.user) {
+        const existingAuthUser = await findAuthUserByEmail(supabase, cleanEmail);
+        const rawReason = (authError?.message || '').toLowerCase();
+
+        if (!existingAuthUser) {
+          res.status(401).json({
+            error: 'Gestor não cadastrado.',
+            message: 'Este e-mail ainda não foi cadastrado como gestor. Utilize a aba "Novo Gestor" para criar seu acesso.',
+            code: 'ACCOUNT_NOT_FOUND',
+          });
+          return;
+        }
+
+        const friendlyMessage = rawReason.includes('email not confirmed')
+          ? 'E-mail ainda não confirmado. Utilize a aba "Novo Gestor" para reativar seu acesso.'
+          : 'Senha incorreta para este e-mail. Verifique a senha digitada ou redefina na aba "Novo Gestor".';
+
         res.status(401).json({
           error: 'Credenciais inválidas.',
-          message: authError?.message || 'E-mail ou senha incorretos.',
+          message: friendlyMessage,
           code: 'INVALID_CREDENTIALS',
         });
         return;
@@ -142,6 +193,8 @@ router.post('/login', async (req: Request, res: Response) => {
         adminInfo: {
           id: adminRecord.id,
           nome: adminRecord.nome,
+          email: authData.user.email || cleanEmail,
+          cargo: 'Admin Gestor',
         },
         isDevMode: false,
       });
@@ -207,17 +260,25 @@ router.post('/register-gestor', async (req: Request, res: Response) => {
     try {
       let targetUserId: string | null = null;
 
-      // 1. Check if user already exists in Supabase Auth
-      const { data: listData } = await supabase.auth.admin.listUsers();
-      let targetUser = listData?.users?.find((u) => u.email?.toLowerCase() === cleanEmail);
+      // 1. Check if user already exists in Supabase Auth (paginated)
+      let targetUser = await findAuthUserByEmail(supabase, cleanEmail);
 
-      if (targetUser) {
-        targetUserId = targetUser.id;
-        // Update password if existing
-        try {
-          await supabase.auth.admin.updateUserById(targetUserId, { password });
-        } catch {
-          // ignore
+      if (targetUser && targetUser.id) {
+        const existingId: string = targetUser.id;
+        targetUserId = existingId;
+        // Update password, confirm email, and sync metadata
+        const { error: updateErr } = await supabase.auth.admin.updateUserById(existingId, {
+          password,
+          email_confirm: true,
+          user_metadata: { nome: cleanNome, cargo: cleanCargo },
+        });
+        if (updateErr) {
+          logServerError('REGISTER_GESTOR_UPDATE_ERROR', updateErr);
+          res.status(400).json({
+            error: 'Não foi possível atualizar a senha do gestor existente.',
+            message: updateErr.message,
+          });
+          return;
         }
       } else {
         // Create user in Supabase Auth
