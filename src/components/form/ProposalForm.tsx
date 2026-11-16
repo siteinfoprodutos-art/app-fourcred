@@ -5,7 +5,18 @@ import { InputField } from '../ui/InputField';
 import { SelectField } from '../ui/SelectField';
 import { TextareaField } from '../ui/TextareaField';
 import { ToggleYesNo } from '../ui/ToggleYesNo';
-import { maskCPF, maskPhone } from '../../utils/masks';
+import {
+  maskCPF,
+  maskPhone,
+  formatCurrencyInput,
+  parseCurrencyInput,
+  formatCurrencyBRL,
+} from '../../utils/masks';
+import {
+  PROPERTY_VALUE_PRESETS,
+  DOWN_PAYMENT_PERCENT_PRESETS,
+  TERM_YEAR_OPTIONS,
+} from '../../utils/financingSimulator';
 import { isValidCPF, isValidEmail, isValidPhone } from '../../utils/validation';
 import {
   CheckCircle2,
@@ -14,9 +25,7 @@ import {
   ArrowRight,
   Send,
   Check,
-  Server,
-  Info,
-  ShieldCheck,
+  RefreshCw,
 } from 'lucide-react';
 
 const STEPS = [
@@ -92,6 +101,7 @@ export const ProposalForm: React.FC = () => {
   const [isSuccess, setIsSuccess] = useState(false);
   const [lastSubmittedId, setLastSubmittedId] = useState<string>('');
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [isFinancingManual, setIsFinancingManual] = useState(false);
 
   const handleP1Change = (field: keyof typeof formData.p1, rawValue: any) => {
     let value = rawValue;
@@ -99,6 +109,8 @@ export const ProposalForm: React.FC = () => {
       value = maskCPF(rawValue);
     } else if (field === 'phoneMobile' || field === 'phoneHome') {
       value = maskPhone(rawValue);
+    } else if (field === 'salary' || field === 'otherIncomes') {
+      value = parseCurrencyInput(String(rawValue));
     }
 
     setFormData((prev) => {
@@ -123,6 +135,8 @@ export const ProposalForm: React.FC = () => {
       value = maskCPF(rawValue);
     } else if (field === 'phoneMobile') {
       value = maskPhone(rawValue);
+    } else if (field === 'salary') {
+      value = parseCurrencyInput(String(rawValue));
     }
 
     setFormData((prev) => {
@@ -155,14 +169,14 @@ export const ProposalForm: React.FC = () => {
     }
   };
 
-  const handleRootChange = (field: keyof ProposalPayload, value: any) => {
+  const handleRootChange = (field: keyof ProposalPayload, value: any, forceAutoFinancing = false) => {
     setFormData((prev) => {
       const updated = {
         ...prev,
         [field]: value,
       };
 
-      // Auto calculate approximate financing value when saleValue or downPayment change
+      // Auto calculate financing value when saleValue, downPayment, fgtsValue, or useFgts change
       if (field === 'saleValue' || field === 'downPayment' || field === 'fgtsValue' || field === 'useFgts') {
         const sale = Number(field === 'saleValue' ? value : updated.saleValue) || 0;
         const down = Number(field === 'downPayment' ? value : updated.downPayment) || 0;
@@ -170,9 +184,10 @@ export const ProposalForm: React.FC = () => {
         const fgts = fgtsActive
           ? Number(field === 'fgtsValue' ? value : updated.fgtsValue) || 0
           : 0;
-        const financed = Math.max(0, sale - down - fgts);
-        if (financed > 0 && (!updated.financingValue || Number(updated.financingValue) === 0)) {
-          updated.financingValue = financed;
+        const financed = Math.max(0, Number((sale - down - fgts).toFixed(2)));
+
+        if (!isFinancingManual || forceAutoFinancing) {
+          updated.financingValue = financed > 0 ? financed : '';
         }
       }
 
@@ -186,6 +201,56 @@ export const ProposalForm: React.FC = () => {
         return copy;
       });
     }
+  };
+
+  const handleCurrencyFieldChange = (
+    field: 'saleValue' | 'downPayment' | 'fgtsValue' | 'financingValue',
+    rawValue: string
+  ) => {
+    const numericVal = parseCurrencyInput(rawValue);
+    if (field === 'financingValue') {
+      setIsFinancingManual(true);
+    }
+    handleRootChange(field, numericVal);
+  };
+
+  const handleApplyPropertyPreset = (presetValue: number) => {
+    setIsFinancingManual(false);
+    setFormData((prev) => {
+      const down = Number(prev.downPayment) || 0;
+      const fgtsActive = prev.useFgts === 'sim' || prev.useFgts === true;
+      const fgts = fgtsActive ? Number(prev.fgtsValue) || 0 : 0;
+      const financed = Math.max(0, Number((presetValue - down - fgts).toFixed(2)));
+      return {
+        ...prev,
+        saleValue: presetValue,
+        financingValue: financed > 0 ? financed : '',
+      };
+    });
+    setErrors((prev) => {
+      const copy = { ...prev };
+      delete copy['saleValue'];
+      delete copy['financingValue'];
+      return copy;
+    });
+  };
+
+  const handleApplyDownPaymentPercent = (percent: number) => {
+    const sale = Number(formData.saleValue) || 0;
+    if (sale <= 0) return;
+    const suggestedDown = Number(((sale * percent) / 100).toFixed(2));
+    setIsFinancingManual(false);
+    handleRootChange('downPayment', suggestedDown, true);
+  };
+
+  const handleRecalculateFinancing = () => {
+    const sale = Number(formData.saleValue) || 0;
+    const down = Number(formData.downPayment) || 0;
+    const fgtsActive = formData.useFgts === 'sim' || formData.useFgts === true;
+    const fgts = fgtsActive ? Number(formData.fgtsValue) || 0 : 0;
+    const financed = Math.max(0, Number((sale - down - fgts).toFixed(2)));
+    setIsFinancingManual(false);
+    handleRootChange('financingValue', financed > 0 ? financed : '');
   };
 
   // Step validation with thorough format and business rules
@@ -391,6 +456,7 @@ export const ProposalForm: React.FC = () => {
       setIsSuccess(true);
       // Clean form state immediately upon confirmed persistence
       setFormData(INITIAL_FORM);
+      setIsFinancingManual(false);
       setCurrentStep(1);
       setErrors({});
     } catch (err: any) {
@@ -664,11 +730,13 @@ export const ProposalForm: React.FC = () => {
                   <InputField
                     label="Renda Mensal Familiar Bruta (R$) *"
                     name="p1.salary"
-                    type="number"
-                    step="0.01"
+                    type="text"
+                    inputMode="numeric"
                     required
-                    placeholder="0.00"
-                    value={formData.p1.salary}
+                    placeholder="0,00"
+                    icon={<span className="text-xs font-bold text-[#94A3B8]">R$</span>}
+                    className="font-mono tabular-nums"
+                    value={formatCurrencyInput(formData.p1.salary)}
                     onChange={(e) => handleP1Change('salary', e.target.value)}
                     error={errors['p1.salary']}
                   />
@@ -678,11 +746,12 @@ export const ProposalForm: React.FC = () => {
                   <InputField
                     label="Outras Rendas Mensais (Valor R$)"
                     name="p1.otherIncomes"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    placeholder="0.00"
-                    value={formData.p1.otherIncomes || ''}
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="0,00"
+                    icon={<span className="text-xs font-bold text-[#94A3B8]">R$</span>}
+                    className="font-mono tabular-nums"
+                    value={formatCurrencyInput(formData.p1.otherIncomes)}
                     onChange={(e) => handleP1Change('otherIncomes', e.target.value)}
                   />
                   <InputField
@@ -870,11 +939,13 @@ export const ProposalForm: React.FC = () => {
                     <InputField
                       label="Renda Mensal Familiar Bruta Titular 2 *"
                       name="p2.salary"
-                      type="number"
-                      step="0.01"
+                      type="text"
+                      inputMode="numeric"
                       required
-                      placeholder="0.00"
-                      value={formData.p2?.salary || ''}
+                      placeholder="0,00"
+                      icon={<span className="text-xs font-bold text-[#94A3B8]">R$</span>}
+                      className="font-mono tabular-nums"
+                      value={formatCurrencyInput(formData.p2?.salary)}
                       onChange={(e) => handleP2Change('salary', e.target.value)}
                       error={errors['p2.salary']}
                     />
@@ -1024,144 +1095,271 @@ export const ProposalForm: React.FC = () => {
 
             {/* STEP 5: Imóvel & Operação */}
             <div className={currentStep === 5 ? 'block space-y-8 animate-in fade-in duration-200' : 'hidden'}>
-              <div>
-                <div className="mb-6 border-b border-[#334155] pb-4">
-                  <h2 className="text-lg font-bold text-white tracking-tight">
-                    Dados do Imóvel Pretendido e Operação Financeira
-                  </h2>
-                  <p className="text-[13px] text-slate-400 mt-1">
-                    Configuração monetária exata da sua proposta de aquisição, prazos e modalidade de cálculo amortizável.
-                  </p>
-                </div>
+              {(() => {
+                const saleNum = Number(formData.saleValue) || 0;
+                const downNum = Number(formData.downPayment) || 0;
+                const fgtsActive = formData.useFgts === 'sim' || formData.useFgts === true;
+                const fgtsNum = fgtsActive ? Number(formData.fgtsValue) || 0 : 0;
+                const financeNum = Number(formData.financingValue) || 0;
+                const expectedFinanced = Math.max(0, Number((saleNum - downNum - fgtsNum).toFixed(2)));
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-8">
-                  <InputField
-                    label="Endereço Completo do Imóvel Pretendido *"
-                    name="targetPropertyAddress"
-                    required
-                    containerClassName="md:col-span-3"
-                    placeholder="Rua, Número, Complemento, Bairro, Cidade - UF"
-                    value={formData.targetPropertyAddress}
-                    onChange={(e) => handleRootChange('targetPropertyAddress', e.target.value)}
-                    error={errors['targetPropertyAddress']}
-                  />
-                  <InputField
-                    label="Nº Vagas de Garagem no Imóvel *"
-                    name="parkingSpaces"
-                    type="number"
-                    min="0"
-                    required
-                    value={formData.parkingSpaces}
-                    onChange={(e) => handleRootChange('parkingSpaces', e.target.value)}
-                    error={errors['parkingSpaces']}
-                  />
-                  <InputField
-                    label="Valor Total de Venda / Avaliação (R$) *"
-                    name="saleValue"
-                    type="number"
-                    step="0.01"
-                    required
-                    placeholder="0.00"
-                    value={formData.saleValue}
-                    onChange={(e) => handleRootChange('saleValue', e.target.value)}
-                    error={errors['saleValue']}
-                  />
-                  <InputField
-                    label="Entrada (Recursos Próprios) (R$) *"
-                    name="downPayment"
-                    type="number"
-                    step="0.01"
-                    required
-                    placeholder="0.00"
-                    value={formData.downPayment}
-                    onChange={(e) => handleRootChange('downPayment', e.target.value)}
-                    error={errors['downPayment']}
-                  />
-                </div>
+                const downPercent = saleNum > 0 ? (downNum / saleNum) * 100 : 0;
+                const financedPercent = saleNum > 0 ? (financeNum / saleNum) * 100 : 0;
 
-                {/* FGTS deduction */}
-                <div className="border border-[#334155] bg-[#0F172A] p-6 rounded-xl flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8 shadow-sm">
-                  <div className="flex items-start gap-4">
-                    <div className="mt-1">
-                      <input
-                        type="checkbox"
-                        id="useFgtsCheckbox"
-                        checked={formData.useFgts === 'sim' || formData.useFgts === true}
-                        onChange={(e) => handleRootChange('useFgts', e.target.checked ? 'sim' : 'nao')}
-                        className="w-5 h-5 text-[#FF6B1A] bg-[#1E293B] border-[#334155] rounded-md focus:ring-[#FF6B1A]/20 transition-colors cursor-pointer"
-                      />
-                    </div>
-                    <div>
-                      <label htmlFor="useFgtsCheckbox" className="text-[15px] font-bold text-white tracking-wide cursor-pointer block">
-                        Deseja abater ou utilizar saldo de FGTS na operação?
-                      </label>
-                      <p className="text-[13px] text-[#CBD5E1] mt-1">
-                        Você pode resgatar saldos de contas ativas e inativas.
+                return (
+                  <div>
+                    <div className="mb-6 border-b border-[#334155] pb-4">
+                      <h2 className="text-lg font-bold text-white tracking-tight">
+                        Dados do Imóvel Pretendido e Operação Financeira
+                      </h2>
+                      <p className="text-[13px] text-slate-400 mt-1">
+                        Preencha o valor de avaliação, entrada e prazo para simular suas parcelas em tempo real.
                       </p>
                     </div>
-                  </div>
-                  {(formData.useFgts === 'sim' || formData.useFgts === true) && (
-                    <div className="w-full md:w-64">
+
+                    {/* Address & Parking */}
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-5 mb-6">
                       <InputField
-                        label="VALOR DO FGTS A UTILIZAR (R$)"
-                        name="fgtsValue"
+                        label="Endereço Completo do Imóvel Pretendido *"
+                        name="targetPropertyAddress"
+                        required
+                        containerClassName="md:col-span-3"
+                        placeholder="Rua, Número, Complemento, Bairro, Cidade - UF"
+                        value={formData.targetPropertyAddress}
+                        onChange={(e) => handleRootChange('targetPropertyAddress', e.target.value)}
+                        error={errors['targetPropertyAddress']}
+                      />
+                      <InputField
+                        label="Vagas de Garagem *"
+                        name="parkingSpaces"
                         type="number"
-                        step="0.01"
-                        placeholder="0.00"
-                        className="uppercase"
-                        value={formData.fgtsValue || ''}
-                        onChange={(e) => handleRootChange('fgtsValue', e.target.value)}
+                        min="0"
+                        required
+                        value={formData.parkingSpaces}
+                        onChange={(e) => handleRootChange('parkingSpaces', e.target.value)}
+                        error={errors['parkingSpaces']}
                       />
                     </div>
-                  )}
-                </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-8">
-                  <InputField
-                    label="Valor da Parcela Financiada (R$) * (Aprox.)"
-                    name="financingValue"
-                    type="number"
-                    step="0.01"
-                    required
-                    placeholder="0.00"
-                    value={formData.financingValue}
-                    onChange={(e) => handleRootChange('financingValue', e.target.value)}
-                    error={errors['financingValue']}
-                  />
-                  <InputField
-                    label="Prazo Financiamento (Anos) *"
-                    name="termYears"
-                    type="number"
-                    min="1"
-                    max="35"
-                    required
-                    value={formData.termYears}
-                    onChange={(e) => handleRootChange('termYears', e.target.value)}
-                    error={errors['termYears']}
-                  />
-                  <SelectField
-                    label="Sistema de Amortização *"
-                    name="amortizationSystem"
-                    required
-                    value={formData.amortizationSystem}
-                    onChange={(e) => handleRootChange('amortizationSystem', e.target.value)}
-                    options={[
-                      { label: 'SAC (Parcelas Decrescentes)', value: 'sac' },
-                      { label: 'Price (Tabela Price - Fixas)', value: 'price' },
-                    ]}
-                  />
-                </div>
+                    {/* Property Appraisal Value & Down Payment (with Currency Masks & Smart Ideas) */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                      {/* Sale / Appraisal Value */}
+                      <div className="space-y-2.5">
+                        <InputField
+                          label="Valor Total de Venda / Avaliação *"
+                          name="saleValue"
+                          type="text"
+                          inputMode="numeric"
+                          required
+                          placeholder="0,00"
+                          icon={<span className="text-xs font-bold text-[#94A3B8]">R$</span>}
+                          className="font-mono tabular-nums"
+                          value={formatCurrencyInput(formData.saleValue)}
+                          onChange={(e) => handleCurrencyFieldChange('saleValue', e.target.value)}
+                          error={errors['saleValue']}
+                        />
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="text-[11px] font-medium text-[#94A3B8] mr-1">
+                            Valores de referência:
+                          </span>
+                          {PROPERTY_VALUE_PRESETS.map((preset) => {
+                            const isSelected = saleNum === preset.value;
+                            return (
+                              <button
+                                key={preset.value}
+                                type="button"
+                                onClick={() => handleApplyPropertyPreset(preset.value)}
+                                className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer border ${
+                                  isSelected
+                                    ? 'bg-[#FF6B1A] border-[#FF6B1A] text-white'
+                                    : 'bg-[#0F172A] border-[#334155] text-[#CBD5E1] hover:border-[#FF6B1A]/60 hover:text-white'
+                                }`}
+                              >
+                                {preset.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
 
-                {/* Regulatory Note */}
-                <div className="border border-[#334155] bg-[#0F172A] p-6 rounded-xl flex items-start gap-4 mb-8 shadow-sm">
-                  <span className="text-[#CBD5E1] mt-0.5 border border-[#334155] rounded-full w-6 h-6 flex items-center justify-center shrink-0 text-sm font-bold bg-[#1E293B]">
-                    i
-                  </span>
-                  <p className="text-[13px] text-[#CBD5E1] font-medium leading-relaxed">
-                    * Lembre-se que o limite máximo de financiamento imobiliário no Brasil costuma ser de{' '}
-                    <strong className="text-white">80% do valor avaliado</strong> do imóvel.
-                  </p>
-                </div>
+                      {/* Down Payment */}
+                      <div className="space-y-2.5">
+                        <InputField
+                          label="Entrada (Recursos Próprios) *"
+                          name="downPayment"
+                          type="text"
+                          inputMode="numeric"
+                          required
+                          placeholder="0,00"
+                          icon={<span className="text-xs font-bold text-[#94A3B8]">R$</span>}
+                          className="font-mono tabular-nums"
+                          value={formatCurrencyInput(formData.downPayment)}
+                          onChange={(e) => handleCurrencyFieldChange('downPayment', e.target.value)}
+                          error={errors['downPayment']}
+                        />
+                        {saleNum > 0 ? (
+                          <div className="space-y-1.5">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className="text-[11px] font-medium text-[#94A3B8] mr-1">
+                                Sugestões de entrada:
+                              </span>
+                              {DOWN_PAYMENT_PERCENT_PRESETS.map((preset) => {
+                                const suggestedVal = Number(((saleNum * preset.percent) / 100).toFixed(2));
+                                const isSelected = Math.abs(downNum - suggestedVal) < 1;
+                                return (
+                                  <button
+                                    key={preset.percent}
+                                    type="button"
+                                    onClick={() => handleApplyDownPaymentPercent(preset.percent)}
+                                    title={`${preset.tag}: ${formatCurrencyBRL(suggestedVal)}`}
+                                    className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer border tabular-nums ${
+                                      isSelected
+                                        ? 'bg-[#FF6B1A] border-[#FF6B1A] text-white'
+                                        : 'bg-[#0F172A] border-[#334155] text-[#CBD5E1] hover:border-[#FF6B1A]/60 hover:text-white'
+                                    }`}
+                                  >
+                                    {preset.label} · {formatCurrencyBRL(suggestedVal).replace(',00', '')}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            {downNum > 0 && (
+                              <p className="text-[11px] text-[#94A3B8] tabular-nums">
+                                Entrada equivale a <strong className="text-white">{downPercent.toFixed(1)}%</strong> do valor avaliado
+                              </p>
+                            )}
+                          </div>
+                        ) : (
+                          <p className="text-[11px] text-[#64748B]">
+                            Informe o valor do imóvel para gerar sugestões automáticas de entrada (10% a 50%).
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* FGTS deduction */}
+                    <div className="border border-[#334155] bg-[#0F172A] p-6 rounded-xl flex flex-col md:flex-row md:items-center justify-between gap-6 mb-6 shadow-sm">
+                      <div className="flex items-start gap-4">
+                        <div className="mt-1">
+                          <input
+                            type="checkbox"
+                            id="useFgtsCheckbox"
+                            checked={fgtsActive}
+                            onChange={(e) => handleRootChange('useFgts', e.target.checked ? 'sim' : 'nao')}
+                            className="w-5 h-5 text-[#FF6B1A] bg-[#1E293B] border-[#334155] rounded-md focus:ring-[#FF6B1A]/20 transition-colors cursor-pointer"
+                          />
+                        </div>
+                        <div>
+                          <label
+                            htmlFor="useFgtsCheckbox"
+                            className="text-[15px] font-bold text-white tracking-wide cursor-pointer block"
+                          >
+                            Deseja abater ou utilizar saldo de FGTS na operação?
+                          </label>
+                          <p className="text-[13px] text-[#CBD5E1] mt-1">
+                            O saldo informado é abatido automaticamente do valor total a financiar.
+                          </p>
+                        </div>
+                      </div>
+                      {fgtsActive && (
+                        <div className="w-full md:w-64">
+                          <InputField
+                            label="Valor do FGTS a Utilizar"
+                            name="fgtsValue"
+                            type="text"
+                            inputMode="numeric"
+                            placeholder="0,00"
+                            icon={<span className="text-xs font-bold text-[#94A3B8]">R$</span>}
+                            className="font-mono tabular-nums"
+                            value={formatCurrencyInput(formData.fgtsValue)}
+                            onChange={(e) => handleCurrencyFieldChange('fgtsValue', e.target.value)}
+                          />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Financing Amount, Term Dropdown, and Amortization System */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-6">
+                      <div className="space-y-1.5">
+                        <InputField
+                          label="Valor a Financiar *"
+                          name="financingValue"
+                          type="text"
+                          inputMode="numeric"
+                          required
+                          placeholder="0,00"
+                          icon={<span className="text-xs font-bold text-[#94A3B8]">R$</span>}
+                          className="font-mono tabular-nums"
+                          value={formatCurrencyInput(formData.financingValue)}
+                          onChange={(e) => handleCurrencyFieldChange('financingValue', e.target.value)}
+                          error={errors['financingValue']}
+                        />
+                        {saleNum > 0 && financeNum > 0 && (
+                          <div className="flex items-center justify-between gap-2 text-[11px] tabular-nums">
+                            <span
+                              className={
+                                financedPercent > 90
+                                  ? 'text-red-400 font-semibold'
+                                  : financedPercent > 80
+                                  ? 'text-amber-400 font-semibold'
+                                  : 'text-emerald-400 font-medium'
+                              }
+                            >
+                              {financedPercent.toFixed(1)}% do imóvel{' '}
+                              {financedPercent > 90
+                                ? '(Acima do máx. 90%)'
+                                : financedPercent > 80
+                                ? '(Limite estendido)'
+                                : '(Dentro do padrão)'}
+                            </span>
+                            {isFinancingManual && expectedFinanced !== financeNum && (
+                              <button
+                                type="button"
+                                onClick={handleRecalculateFinancing}
+                                className="text-[#FF6B1A] hover:underline flex items-center gap-1 cursor-pointer whitespace-nowrap"
+                              >
+                                <RefreshCw className="w-3 h-3" />
+                                Auto
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+
+                      <SelectField
+                        label="Prazo do Financiamento *"
+                        name="termYears"
+                        required
+                        placeholderOption=""
+                        value={String(formData.termYears || 30)}
+                        onChange={(e) => handleRootChange('termYears', Number(e.target.value))}
+                        error={errors['termYears']}
+                        options={TERM_YEAR_OPTIONS}
+                      />
+
+                      <SelectField
+                        label="Sistema de Amortização *"
+                        name="amortizationSystem"
+                        required
+                        value={formData.amortizationSystem}
+                        onChange={(e) => handleRootChange('amortizationSystem', e.target.value)}
+                        options={[
+                          { label: 'SAC (Parcelas Decrescentes)', value: 'sac' },
+                          { label: 'Price (Tabela Price - Fixas)', value: 'price' },
+                        ]}
+                      />
+                    </div>
+
+                    {/* Regulatory Note */}
+                    <div className="border border-[#334155] bg-[#0F172A] p-5 rounded-xl flex items-start gap-4 mb-8 shadow-sm">
+                      <span className="text-[#CBD5E1] mt-0.5 border border-[#334155] rounded-full w-6 h-6 flex items-center justify-center shrink-0 text-sm font-bold bg-[#1E293B]">
+                        i
+                      </span>
+                      <p className="text-[13px] text-[#CBD5E1] font-medium leading-relaxed">
+                        * Lembre-se que o limite máximo de financiamento imobiliário no Brasil costuma ser de{' '}
+                        <strong className="text-white">80% do valor avaliado</strong> do imóvel.
+                      </p>
+                    </div>
 
                 {/* Terms of Agreement */}
                 <div className="bg-[#0F172A] border border-[#FF6B1A]/50 rounded-xl p-6 text-white text-sm shadow-sm relative overflow-hidden">
@@ -1193,7 +1391,9 @@ export const ProposalForm: React.FC = () => {
                     </div>
                   </div>
                 </div>
-              </div>
+                  </div>
+                );
+              })()}
             </div>
 
             <hr className="border-[#334155] my-8" />

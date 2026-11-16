@@ -409,7 +409,7 @@ router.post('/gestores', requireAdminAuth, async (req: Request, res: Response) =
       let targetUserId: string | null = null;
 
       // 1. Check if user already exists in Supabase Auth
-      const { data: listData } = await supabaseAdmin.auth.admin.listUsers();
+      const { data: listData } = await supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 1000 });
       const existingAuthUser = listData?.users?.find(
         (u) => u.email?.toLowerCase() === cleanEmail
       );
@@ -419,6 +419,7 @@ router.post('/gestores', requireAdminAuth, async (req: Request, res: Response) =
         try {
           await supabaseAdmin.auth.admin.updateUserById(targetUserId, {
             password: adminPassword,
+            email_confirm: true,
           });
         } catch {
           // ignore
