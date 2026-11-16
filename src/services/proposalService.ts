@@ -82,6 +82,30 @@ class ProposalService {
     return data;
   }
 
+  // Register a new Gestor directly from Login Screen (Passcode authorized)
+  async registerGestor(data: { nome: string; email: string; password: string; cargo?: string }): Promise<AuthSession> {
+    const res = await fetch('/api/auth/register-gestor', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...data,
+        passcode: 'fourcred',
+      }),
+    });
+
+    const body = await res.json();
+    if (!res.ok) {
+      throw new Error(body.message || body.error || 'Falha ao cadastrar novo gestor.');
+    }
+
+    if (body.token) {
+      sessionStorage.setItem(AUTH_TOKEN_KEY, body.token);
+      sessionStorage.setItem(AUTH_USER_KEY, JSON.stringify(body.adminInfo));
+    }
+
+    return body;
+  }
+
   // Admin Logout
   async logout(): Promise<void> {
     const token = this.getToken();
@@ -278,18 +302,16 @@ class ProposalService {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
-    try {
-      const res = await fetch(`/api/proposals/${id}/status`, {
-        method: 'PATCH',
-        headers,
-        body: JSON.stringify({ status }),
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.message || data.error || 'Erro ao atualizar status');
-      }
-    } catch (err: any) {
-      console.warn('[ProposalService Update Warning]:', err?.message || err);
+    const res = await fetch(`/api/proposals/${id}/status`, {
+      method: 'PATCH',
+      headers,
+      body: JSON.stringify({ status }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(data.message || data.error || 'Erro ao atualizar status da proposta.');
     }
 
     memoryCache = memoryCache.map((item) => (item.id === id ? { ...item, status } : item));
@@ -351,6 +373,54 @@ class ProposalService {
     } catch {
       // Non-blocking audit log
     }
+  }
+
+  // Fetch list of registered administrators
+  async getAdminList(): Promise<AdminProfile[]> {
+    const token = this.getToken();
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    try {
+      const res = await fetch('/api/admin/gestores', { headers });
+      if (res.ok) {
+        const body = await res.json();
+        if (body.success && Array.isArray(body.data)) {
+          return body.data;
+        }
+      }
+    } catch (err: any) {
+      console.warn('[ProposalService getAdminList Error]:', err?.message || err);
+    }
+    return [
+      {
+        id: '1',
+        nome: 'Proprietário',
+        email: 'danielfourcred@gmail.com',
+        cargo: 'Admin Gestor',
+      },
+    ];
+  }
+
+  // Register a new administrator
+  async createAdmin(data: { nome: string; email: string; cargo?: string; password?: string }): Promise<AdminProfile> {
+    const token = this.getToken();
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const res = await fetch('/api/admin/gestores', {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(data),
+    });
+
+    const body = await res.json();
+
+    if (!res.ok || !body.success) {
+      throw new Error(body.message || body.error || 'Falha ao cadastrar administrador.');
+    }
+
+    return body.data;
   }
 }
 
