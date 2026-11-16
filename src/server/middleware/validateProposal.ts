@@ -58,8 +58,32 @@ export const validateProposalSubmission = (req: Request, res: Response, next: Ne
     fieldErrors['p1.serviceTime'] = 'Tempo de FGTS é obrigatório.';
   }
 
-  if (p1.salary === undefined || p1.salary === null || Number(p1.salary) <= 0) {
+  if (
+    p1.salary === undefined ||
+    p1.salary === null ||
+    !Number.isFinite(Number(p1.salary)) ||
+    Number(p1.salary) <= 0
+  ) {
     fieldErrors['p1.salary'] = 'Renda mensal familiar bruta deve ser superior a R$ 0,00.';
+  }
+  if (
+    p1.otherIncomes !== undefined &&
+    p1.otherIncomes !== null &&
+    p1.otherIncomes !== '' &&
+    (!Number.isFinite(Number(p1.otherIncomes)) || Number(p1.otherIncomes) < 0)
+  ) {
+    fieldErrors['p1.otherIncomes'] = 'Outras rendas devem ser um valor não negativo.';
+  }
+  for (const [statusField, amountField, label] of [
+    ['hasFinancing', 'financingInstallment', 'financiamento'],
+    ['hasLoan', 'loanInstallment', 'empréstimo'],
+  ] as const) {
+    const amount = p1[amountField];
+    if (amount !== undefined && amount !== null && amount !== '' && (!Number.isFinite(Number(amount)) || Number(amount) < 0)) {
+      fieldErrors[`p1.${amountField}`] = `A parcela mensal de ${label} deve ser um valor não negativo.`;
+    } else if (p1[statusField] === 'sim' && Number(amount) <= 0) {
+      fieldErrors[`p1.${amountField}`] = `Informe o valor mensal da parcela de ${label}.`;
+    }
   }
 
   // 2. Co-proponente Validation (if hasP2 === true)
@@ -80,8 +104,27 @@ export const validateProposalSubmission = (req: Request, res: Response, next: Ne
       if (!p2.phoneMobile || !isValidPhone(p2.phoneMobile)) {
         fieldErrors['p2.phoneMobile'] = 'Celular do segundo proponente é inválido.';
       }
-      if (!p2.salary || Number(p2.salary) <= 0) {
+      if (!p2.salary || !Number.isFinite(Number(p2.salary)) || Number(p2.salary) <= 0) {
         fieldErrors['p2.salary'] = 'Renda do segundo proponente é obrigatória.';
+      }
+      if (
+        p2.otherIncomes !== undefined &&
+        p2.otherIncomes !== null &&
+        p2.otherIncomes !== '' &&
+        (!Number.isFinite(Number(p2.otherIncomes)) || Number(p2.otherIncomes) < 0)
+      ) {
+        fieldErrors['p2.otherIncomes'] = 'Outras rendas devem ser um valor não negativo.';
+      }
+      for (const [statusField, amountField, label] of [
+        ['hasFinancing', 'financingInstallment', 'financiamento'],
+        ['hasLoan', 'loanInstallment', 'empréstimo'],
+      ] as const) {
+        const amount = p2[amountField];
+        if (amount !== undefined && amount !== null && amount !== '' && (!Number.isFinite(Number(amount)) || Number(amount) < 0)) {
+          fieldErrors[`p2.${amountField}`] = `A parcela mensal de ${label} deve ser um valor não negativo.`;
+        } else if (p2[statusField] === 'sim' && Number(amount) <= 0) {
+          fieldErrors[`p2.${amountField}`] = `Informe o valor mensal da parcela de ${label}.`;
+        }
       }
     }
   }

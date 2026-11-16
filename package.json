@@ -10,6 +10,7 @@
     "start": "tsx server.ts",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
+    "test": "node --import tsx --test src/services/financialSimulationService.test.ts",
     "db:push": "supabase db push",
     "db:lint": "supabase db lint",
     "db:status": "supabase status",

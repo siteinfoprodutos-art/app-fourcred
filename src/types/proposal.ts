@@ -31,6 +31,11 @@ export interface CoProposerData {
   profession: string;
   serviceTime: string;
   salary: number | string;
+  otherIncomes?: number | string;
+  hasFinancing?: 'sim' | 'nao' | string;
+  financingInstallment?: number | string;
+  hasLoan?: 'sim' | 'nao' | string;
+  loanInstallment?: number | string;
 }
 
 export interface ProposalPayload {
@@ -61,7 +66,73 @@ export type ProposalStatus = 'Pendente' | 'Em Análise' | 'Aprovado' | 'Recusado
 
 export interface ProposalRecord {
   id: string;
+  db_id?: string;
   payload: ProposalPayload;
   status?: ProposalStatus;
   created_at?: string;
+}
+
+export type AmortizationSystem = 'sac' | 'price';
+
+export interface SimulationParameters {
+  propertyValue: number;
+  downPayment: number;
+  fgtsValue: number;
+  financedAmount: number;
+  monthlyRatePercent: number;
+  termMonths: number;
+  amortizationSystem: AmortizationSystem;
+}
+
+export interface SimulationInstallment {
+  installmentNumber: number;
+  payment: number;
+  amortization: number;
+  interest: number;
+  outstandingBalance: number;
+}
+
+export interface SimulationResult {
+  firstInstallment: number;
+  lastInstallment: number;
+  totalPaid: number;
+  totalInterest: number;
+  installments: SimulationInstallment[];
+}
+
+export interface FinancialSimulationRecord {
+  id: string;
+  proposalId: string | null;
+  adminUserId: string | null;
+  updatedByAdminUserId?: string | null;
+  scenarioName: string;
+  parameters: SimulationParameters;
+  result: SimulationResult;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FinancialSimulationDatabaseRow {
+  id: string;
+  cadastro_id: string | null;
+  administrador_id: string | null;
+  atualizado_por_administrador_id: string | null;
+  nome_cenario: string;
+  valor_imovel: number | string;
+  valor_entrada: number | string;
+  valor_fgts: number | string;
+  valor_financiado: number | string;
+  taxa_mensal: number | string;
+  prazo_meses: number;
+  sistema_amortizacao: AmortizationSystem;
+  primeira_prestacao: number | string;
+  ultima_prestacao: number | string;
+  total_pago: number | string;
+  total_juros: number | string;
+  memoria_calculo: {
+    parameters: SimulationParameters;
+    result: SimulationResult;
+  };
+  created_at: string;
+  updated_at: string;
 }

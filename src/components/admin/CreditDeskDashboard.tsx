@@ -1,7 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { ProposalRecord, ProposalStatus } from '../../types/proposal';
+import { FinancialSimulationRecord } from '../../types/proposal';
 import { proposalService, AdminProfile } from '../../services/proposalService';
 import { generateProposalPDF } from '../../services/pdfService';
+import { ProposalFinancialAnalysis } from './ProposalFinancialAnalysis';
+import {
+  ProposalSimulationHistory,
+  ProposalSimulationPanel,
+} from './ProposalSimulationPanel';
 import { AdminLoginForm } from './AdminLoginForm';
 import { ReportExportModal } from './ReportExportModal';
 import {
@@ -60,6 +66,9 @@ export const CreditDeskDashboard: React.FC = () => {
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [selectedProposal, setSelectedProposal] = useState<ProposalRecord | null>(null);
+  const [proposalTab, setProposalTab] = useState<'cadastro' | 'analise' | 'simulacao' | 'historico'>('cadastro');
+  const [editingSimulation, setEditingSimulation] = useState<FinancialSimulationRecord | null>(null);
+  const [simulationRefreshKey, setSimulationRefreshKey] = useState(0);
 
   // Check Auth State on mount
   useEffect(() => {
@@ -778,7 +787,11 @@ export const CreditDeskDashboard: React.FC = () => {
                     return (
                       <tr
                         key={item.id}
-                        onClick={() => setSelectedProposal(item)}
+                        onClick={() => {
+                          setSelectedProposal(item);
+                          setProposalTab('cadastro');
+                          setEditingSimulation(null);
+                        }}
                         className="hover:bg-white/5 cursor-pointer bg-transparent transition-colors group"
                       >
                         <td className="px-6 py-4 whitespace-nowrap">
@@ -845,6 +858,8 @@ export const CreditDeskDashboard: React.FC = () => {
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setSelectedProposal(item);
+                                setProposalTab('cadastro');
+                                setEditingSimulation(null);
                               }}
                               className="flex items-center gap-1 px-2.5 py-1.5 border border-[#334155] text-[#CBD5E1] hover:bg-[#334155] hover:text-white rounded-lg text-[9px] uppercase font-bold tracking-widest transition-all shadow-sm cursor-pointer"
                             >
@@ -958,7 +973,7 @@ export const CreditDeskDashboard: React.FC = () => {
       {/* Detailed Inspection Modal */}
       {selectedProposal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#0F172A]/85 backdrop-blur-sm p-4 overflow-y-auto">
-          <div className="bg-[#1E293B] border border-[#334155] rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto shadow-2xl p-6 sm:p-8 space-y-6 text-white my-8">
+          <div className="bg-[#1E293B] border border-[#334155] rounded-2xl max-w-5xl w-full max-h-[90vh] overflow-y-auto shadow-2xl p-5 sm:p-8 space-y-6 text-white my-8">
             <div className="flex justify-between items-start border-b border-[#334155] pb-4">
               <div>
                 <div className="flex items-center gap-3">
@@ -1010,7 +1025,30 @@ export const CreditDeskDashboard: React.FC = () => {
               </div>
             </div>
 
+            <div className="flex gap-2 overflow-x-auto border-b border-[#334155] pb-2">
+              {([
+                ['cadastro', 'Dados cadastrais'],
+                ['analise', 'Análise financeira'],
+                ['simulacao', 'Central de simulação'],
+                ['historico', 'Histórico de simulações'],
+              ] as const).map(([tab, label]) => (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => setProposalTab(tab)}
+                  className={`shrink-0 rounded-lg px-3 py-2 text-xs font-bold transition ${
+                    proposalTab === tab
+                      ? 'bg-[#FF6B1A] text-white'
+                      : 'border border-[#334155] text-[#CBD5E1]/70 hover:text-white'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
             {/* Details Content Grid */}
+            {proposalTab === 'cadastro' && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs">
               {/* Proponente 1 */}
               <div className="bg-[#0F172A] p-5 rounded-xl border border-[#334155] space-y-3">
@@ -1049,9 +1087,31 @@ export const CreditDeskDashboard: React.FC = () => {
                     <span className="font-semibold">{selectedProposal.payload.p1.profession}</span>
                   </div>
                   <div>
+                    <span className="text-[#CBD5E1]/60 block">Tempo de serviço:</span>
+                    <span className="font-semibold">{selectedProposal.payload.p1.serviceTime}</span>
+                  </div>
+                  <div>
                     <span className="text-[#CBD5E1]/60 block">Renda Bruta:</span>
                     <span className="font-semibold text-emerald-400">
                       R$ {Number(selectedProposal.payload.p1.salary || 0).toLocaleString('pt-BR')}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[#CBD5E1]/60 block">Outras rendas:</span>
+                    <span className="font-semibold">
+                      R$ {Number(selectedProposal.payload.p1.otherIncomes || 0).toLocaleString('pt-BR')}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[#CBD5E1]/60 block">Parcela de empréstimos:</span>
+                    <span className="font-semibold">
+                      R$ {Number(selectedProposal.payload.p1.loanInstallment || 0).toLocaleString('pt-BR')}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[#CBD5E1]/60 block">Parcela de financiamentos:</span>
+                    <span className="font-semibold">
+                      R$ {Number(selectedProposal.payload.p1.financingInstallment || 0).toLocaleString('pt-BR')}
                     </span>
                   </div>
                 </div>
@@ -1077,13 +1137,55 @@ export const CreditDeskDashboard: React.FC = () => {
                       <span className="font-semibold">{selectedProposal.payload.p2.cpf}</span>
                     </div>
                     <div>
+                      <span className="text-[#CBD5E1]/60 block">RG:</span>
+                      <span className="font-semibold">{selectedProposal.payload.p2.rg}</span>
+                    </div>
+                    <div>
+                      <span className="text-[#CBD5E1]/60 block">Nascimento:</span>
+                      <span className="font-semibold">{selectedProposal.payload.p2.dob}</span>
+                    </div>
+                    <div>
+                      <span className="text-[#CBD5E1]/60 block">Estado civil:</span>
+                      <span className="font-semibold capitalize">{selectedProposal.payload.p2.maritalStatus}</span>
+                    </div>
+                    <div className="col-span-2">
+                      <span className="text-[#CBD5E1]/60 block">Email:</span>
+                      <span className="font-semibold">{selectedProposal.payload.p2.email}</span>
+                    </div>
+                    <div className="col-span-2">
+                      <span className="text-[#CBD5E1]/60 block">Celular:</span>
+                      <span className="font-semibold">{selectedProposal.payload.p2.phoneMobile}</span>
+                    </div>
+                    <div>
                       <span className="text-[#CBD5E1]/60 block">Profissão:</span>
                       <span className="font-semibold">{selectedProposal.payload.p2.profession}</span>
+                    </div>
+                    <div>
+                      <span className="text-[#CBD5E1]/60 block">Tempo de serviço:</span>
+                      <span className="font-semibold">{selectedProposal.payload.p2.serviceTime}</span>
                     </div>
                     <div>
                       <span className="text-[#CBD5E1]/60 block">Renda Bruta:</span>
                       <span className="font-semibold text-emerald-400">
                         R$ {Number(selectedProposal.payload.p2.salary || 0).toLocaleString('pt-BR')}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-[#CBD5E1]/60 block">Outras rendas:</span>
+                      <span className="font-semibold">
+                        R$ {Number(selectedProposal.payload.p2.otherIncomes || 0).toLocaleString('pt-BR')}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-[#CBD5E1]/60 block">Parcela de empréstimos:</span>
+                      <span className="font-semibold">
+                        R$ {Number(selectedProposal.payload.p2.loanInstallment || 0).toLocaleString('pt-BR')}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-[#CBD5E1]/60 block">Parcela de financiamentos:</span>
+                      <span className="font-semibold">
+                        R$ {Number(selectedProposal.payload.p2.financingInstallment || 0).toLocaleString('pt-BR')}
                       </span>
                     </div>
                   </div>
@@ -1145,6 +1247,31 @@ export const CreditDeskDashboard: React.FC = () => {
                 </div>
               </div>
             </div>
+            )}
+
+            {proposalTab === 'analise' && (
+              <ProposalFinancialAnalysis proposal={selectedProposal} />
+            )}
+            {proposalTab === 'simulacao' && (
+              <ProposalSimulationPanel
+                key={selectedProposal.id}
+                proposal={selectedProposal}
+                editingSimulation={editingSimulation}
+                onSaved={() => setSimulationRefreshKey((current) => current + 1)}
+                onCancelEdit={() => setEditingSimulation(null)}
+              />
+            )}
+            {proposalTab === 'historico' && (
+              <ProposalSimulationHistory
+                key={`${selectedProposal.id}-${simulationRefreshKey}`}
+                proposal={selectedProposal}
+                refreshKey={simulationRefreshKey}
+                onEdit={(simulation) => {
+                  setEditingSimulation(simulation);
+                  setProposalTab('simulacao');
+                }}
+              />
+            )}
 
             {/* Modal Footer Actions */}
             <div className="flex flex-col sm:flex-row justify-between items-center gap-3 border-t border-[#334155] pt-4">

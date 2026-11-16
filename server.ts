@@ -15,6 +15,7 @@ import { validateProposalSubmission } from './src/server/middleware/validateProp
 import { requireAdminAuth } from './src/server/middleware/adminAuth.ts';
 import authRoutes from './src/server/routes/authRoutes.ts';
 import adminRoutes from './src/server/routes/adminRoutes.ts';
+import simulationRoutes from './src/server/routes/simulationRoutes.ts';
 import { logServerAction, logServerError, maskCPFForLog } from './src/server/utils/logger.ts';
 
 // Load environment variables from .env file
@@ -32,6 +33,7 @@ app.use(express.json({ limit: '10mb' }));
 app.use('/api/auth', authRoutes);
 // Mount Admin routes (/api/admin/dashboard, etc.)
 app.use('/api/admin', adminRoutes);
+app.use('/api/admin', simulationRoutes);
 
 // Initial seed proposals (used in development when Supabase is not yet connected)
 const INITIAL_PROPOSALS = [
@@ -399,6 +401,7 @@ app.get('/api/proposals', requireAdminAuth, async (req: Request, res: Response) 
       if (!legacyError && legacyData) {
         const records = legacyData.map((row) => ({
           id: row.codigo_proposta || row.id,
+          db_id: row.id,
           status: row.status || 'Pendente',
           created_at: row.created_at,
           payload: row.payload || {},

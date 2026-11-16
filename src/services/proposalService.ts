@@ -1,4 +1,10 @@
-import { ProposalPayload, ProposalRecord, ProposalStatus } from '../types/proposal';
+import {
+  FinancialSimulationRecord,
+  ProposalPayload,
+  ProposalRecord,
+  ProposalStatus,
+  SimulationParameters,
+} from '../types/proposal';
 
 export interface SystemEnvironmentStatus {
   isDevMode: boolean;
@@ -163,6 +169,63 @@ class ProposalService {
       }
     }
     return memoryCache;
+  }
+
+  private getAdminHeaders(json = false): Record<string, string> {
+    const headers: Record<string, string> = {};
+    const token = this.getToken();
+    if (token) headers.Authorization = `Bearer ${token}`;
+    if (json) headers['Content-Type'] = 'application/json';
+    return headers;
+  }
+
+  async getFinancialSimulations(proposalId: string): Promise<FinancialSimulationRecord[]> {
+    const response = await fetch(
+      `/api/admin/propostas/${encodeURIComponent(proposalId)}/simulacoes`,
+      { headers: this.getAdminHeaders() }
+    );
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.message || data.error || 'Não foi possível consultar as simulações.');
+    }
+    return data.data;
+  }
+
+  async createFinancialSimulation(
+    proposalId: string,
+    scenarioName: string,
+    parameters: SimulationParameters
+  ): Promise<FinancialSimulationRecord> {
+    const response = await fetch(
+      `/api/admin/propostas/${encodeURIComponent(proposalId)}/simulacoes`,
+      {
+        method: 'POST',
+        headers: this.getAdminHeaders(true),
+        body: JSON.stringify({ scenarioName, parameters }),
+      }
+    );
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.message || data.error || 'Não foi possível salvar a simulação.');
+    }
+    return data.data;
+  }
+
+  async updateFinancialSimulation(
+    simulationId: string,
+    scenarioName: string,
+    parameters: SimulationParameters
+  ): Promise<FinancialSimulationRecord> {
+    const response = await fetch(`/api/admin/simulacoes/${encodeURIComponent(simulationId)}`, {
+      method: 'PATCH',
+      headers: this.getAdminHeaders(true),
+      body: JSON.stringify({ scenarioName, parameters }),
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.message || data.error || 'Não foi possível atualizar a simulação.');
+    }
+    return data.data;
   }
 
   // Submit proposal to Node.js backend (Public candidate access)

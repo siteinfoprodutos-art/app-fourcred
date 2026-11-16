@@ -80,7 +80,10 @@ router.post('/login', async (req: Request, res: Response) => {
         // optional audit
       }
 
-      logServerAction('ADMIN_LOGIN_SUCCESS', { adminId: adminRecord.id, email: maskEmailForLog(cleanEmail) });
+      logServerAction('ADMIN_LOGIN_SUCCESS', {
+        adminUserId: adminRecord.user_id,
+        email: maskEmailForLog(cleanEmail),
+      });
 
       res.json({
         success: true,
@@ -92,7 +95,7 @@ router.post('/login', async (req: Request, res: Response) => {
           email: authData.user.email,
         },
         adminInfo: {
-          id: adminRecord.id,
+          id: adminRecord.user_id,
           nome: adminRecord.nome,
         },
         isDevMode: false,

@@ -123,7 +123,7 @@ export const requireAdminAuth = async (req: Request, res: Response, next: NextFu
 
     // Attach verified admin user to request object
     req.adminUser = {
-      id: adminRecord.id,
+      id: adminRecord.user_id,
       user_id: adminRecord.user_id,
       email: adminRecord.email,
       nome: adminRecord.nome,

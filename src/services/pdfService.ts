@@ -1,5 +1,11 @@
 import { jsPDF } from 'jspdf';
-import { ProposalPayload } from '../types/proposal';
+import autoTable from 'jspdf-autotable';
+import {
+  ProposalPayload,
+  ProposalRecord,
+  SimulationParameters,
+  SimulationResult,
+} from '../types/proposal';
 
 export const generateProposalPDF = (data: ProposalPayload, id?: string) => {
   const doc = new jsPDF();
@@ -126,4 +132,67 @@ export const generateProposalPDF = (data: ProposalPayload, id?: string) => {
 
   const cpfSafe = (f.cpf || 'proposta').replace(/[^a-zA-Z0-9]/g, '');
   doc.save(`Ficha_Fourcred_${cpfSafe}.pdf`);
+};
+
+export const generateSimulationPDF = (
+  proposal: ProposalRecord,
+  scenarioName: string,
+  parameters: SimulationParameters,
+  result: SimulationResult,
+  simulatedAt = new Date().toISOString()
+) => {
+  const doc = new jsPDF();
+  const formatCurrency = (value: number) =>
+    value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const formatDate = (value: string) => new Date(value).toLocaleString('pt-BR');
+
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(18);
+  doc.setTextColor(255, 107, 26);
+  doc.text('FOURCRED | Simulação Financeira', 15, 20);
+  doc.setFontSize(10);
+  doc.setTextColor(45, 55, 72);
+  doc.text(`Cliente: ${proposal.payload.p1.fullName}`, 15, 31);
+  doc.text(`Código da proposta: ${proposal.id}`, 15, 37);
+  doc.text(`Cenário: ${scenarioName}`, 15, 43);
+  doc.text(`Data da simulação: ${formatDate(simulatedAt)}`, 15, 49);
+
+  autoTable(doc, {
+    startY: 56,
+    head: [['Parâmetro', 'Valor']],
+    body: [
+      ['Valor do imóvel', formatCurrency(parameters.propertyValue)],
+      ['Entrada', formatCurrency(parameters.downPayment)],
+      ['FGTS utilizado', formatCurrency(parameters.fgtsValue)],
+      ['Valor financiado', formatCurrency(parameters.financedAmount)],
+      ['Taxa mensal informada', `${parameters.monthlyRatePercent.toLocaleString('pt-BR')}%`],
+      ['Prazo', `${parameters.termMonths} meses`],
+      ['Sistema', parameters.amortizationSystem.toUpperCase()],
+      ['Primeira prestação', formatCurrency(result.firstInstallment)],
+      ['Última prestação', formatCurrency(result.lastInstallment)],
+      ['Total estimado pago', formatCurrency(result.totalPaid)],
+      ['Total estimado de juros', formatCurrency(result.totalInterest)],
+    ],
+    styles: { fontSize: 9, textColor: [45, 55, 72] },
+    headStyles: { fillColor: [30, 41, 59] },
+    alternateRowStyles: { fillColor: [248, 250, 252] },
+  });
+
+  const finalY = (doc as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY || 60;
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.setTextColor(180, 83, 9);
+  const notice =
+    'SIMULAÇÃO FINANCEIRA ESTIMADA — NÃO REPRESENTA APROVAÇÃO DE CRÉDITO OU PROPOSTA OFICIAL DA CAIXA.';
+  const noticeLines = doc.splitTextToSize(notice, 180);
+  doc.text(noticeLines, 15, finalY + 10);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(8);
+  doc.setTextColor(100, 100, 100);
+  doc.text(
+    'Inclui amortização e juros calculados conforme os parâmetros informados. Não inclui seguros, TR, tarifas ou outros encargos.',
+    15,
+    finalY + 10 + noticeLines.length * 4.5
+  );
+  doc.save(`Simulacao_Fourcred_${proposal.id}_${parameters.amortizationSystem.toUpperCase()}.pdf`);
 };

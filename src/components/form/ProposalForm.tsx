@@ -60,6 +60,11 @@ const INITIAL_FORM: ProposalPayload = {
     profession: '',
     serviceTime: '',
     salary: '',
+    otherIncomes: '',
+    hasFinancing: 'nao',
+    financingInstallment: '',
+    hasLoan: 'nao',
+    loanInstallment: '',
   },
   usedFgts: 'nao',
   fgtsSubsidy: 'nao',
@@ -96,13 +101,12 @@ export const ProposalForm: React.FC = () => {
       value = maskPhone(rawValue);
     }
 
-    setFormData((prev) => ({
-      ...prev,
-      p1: {
-        ...prev.p1,
-        [field]: value,
-      },
-    }));
+    setFormData((prev) => {
+      const p1 = { ...prev.p1, [field]: value };
+      if (field === 'hasFinancing' && value === 'nao') p1.financingInstallment = '';
+      if (field === 'hasLoan' && value === 'nao') p1.loanInstallment = '';
+      return { ...prev, p1 };
+    });
 
     if (errors[`p1.${field}`]) {
       setErrors((prev) => {
@@ -121,13 +125,26 @@ export const ProposalForm: React.FC = () => {
       value = maskPhone(rawValue);
     }
 
-    setFormData((prev) => ({
-      ...prev,
-      p2: {
-        ...(prev.p2 || ({} as any)),
+    setFormData((prev) => {
+      const p2 = {
+        ...(prev.p2 || {
+          fullName: '',
+          cpf: '',
+          rg: '',
+          dob: '',
+          maritalStatus: 'casado',
+          email: '',
+          phoneMobile: '',
+          profession: '',
+          serviceTime: '',
+          salary: '',
+        }),
         [field]: value,
-      },
-    }));
+      };
+      if (field === 'hasFinancing' && value === 'nao') p2.financingInstallment = '';
+      if (field === 'hasLoan' && value === 'nao') p2.loanInstallment = '';
+      return { ...prev, p2 };
+    });
 
     if (errors[`p2.${field}`]) {
       setErrors((prev) => {
@@ -229,6 +246,12 @@ export const ProposalForm: React.FC = () => {
       if (!formData.p1.salary || Number(formData.p1.salary) <= 0) {
         errs['p1.salary'] = 'Renda mensal deve ser superior a R$ 0,00';
       }
+      if (formData.p1.hasFinancing === 'sim' && Number(formData.p1.financingInstallment) <= 0) {
+        errs['p1.financingInstallment'] = 'Informe o valor mensal da parcela de financiamento';
+      }
+      if (formData.p1.hasLoan === 'sim' && Number(formData.p1.loanInstallment) <= 0) {
+        errs['p1.loanInstallment'] = 'Informe o valor mensal da parcela de empréstimo';
+      }
     } else if (currentStep === 3) {
       if (formData.hasP2) {
         if (!formData.p2?.fullName?.trim()) {
@@ -263,6 +286,12 @@ export const ProposalForm: React.FC = () => {
         }
         if (!formData.p2?.serviceTime?.trim()) {
           errs['p2.serviceTime'] = 'Tempo de FGTS é obrigatório';
+        }
+        if (formData.p2?.hasFinancing === 'sim' && Number(formData.p2.financingInstallment) <= 0) {
+          errs['p2.financingInstallment'] = 'Informe o valor mensal da parcela de financiamento';
+        }
+        if (formData.p2?.hasLoan === 'sim' && Number(formData.p2.loanInstallment) <= 0) {
+          errs['p2.loanInstallment'] = 'Informe o valor mensal da parcela de empréstimo';
         }
       }
     } else if (currentStep === 4) {
@@ -650,6 +679,7 @@ export const ProposalForm: React.FC = () => {
                     label="Outras Rendas Mensais (Valor R$)"
                     name="p1.otherIncomes"
                     type="number"
+                    min="0"
                     step="0.01"
                     placeholder="0.00"
                     value={formData.p1.otherIncomes || ''}
@@ -662,6 +692,48 @@ export const ProposalForm: React.FC = () => {
                     value={formData.p1.otherIncomesOrigin || ''}
                     onChange={(e) => handleP1Change('otherIncomesOrigin', e.target.value)}
                   />
+                </div>
+
+                <div className="rounded-xl border border-[#334155] bg-[#0F172A] px-5">
+                  <h3 className="pt-4 text-xs font-bold uppercase tracking-widest text-[#FF6B1A]">
+                    Compromissos Financeiros Mensais (P1)
+                  </h3>
+                  <ToggleYesNo
+                    label="Possui parcelas de financiamento existentes?"
+                    value={formData.p1.hasFinancing || 'nao'}
+                    onChange={(value) => handleP1Change('hasFinancing', value)}
+                  />
+                  {formData.p1.hasFinancing === 'sim' && (
+                    <InputField
+                      label="Valor mensal das parcelas de financiamentos (R$)"
+                      name="p1.financingInstallment"
+                      type="number"
+                      min="0.01"
+                      step="0.01"
+                      required
+                      value={formData.p1.financingInstallment || ''}
+                      onChange={(event) => handleP1Change('financingInstallment', event.target.value)}
+                      error={errors['p1.financingInstallment']}
+                    />
+                  )}
+                  <ToggleYesNo
+                    label="Possui parcelas de empréstimos existentes?"
+                    value={formData.p1.hasLoan || 'nao'}
+                    onChange={(value) => handleP1Change('hasLoan', value)}
+                  />
+                  {formData.p1.hasLoan === 'sim' && (
+                    <InputField
+                      label="Valor mensal das parcelas de empréstimos (R$)"
+                      name="p1.loanInstallment"
+                      type="number"
+                      min="0.01"
+                      step="0.01"
+                      required
+                      value={formData.p1.loanInstallment || ''}
+                      onChange={(event) => handleP1Change('loanInstallment', event.target.value)}
+                      error={errors['p1.loanInstallment']}
+                    />
+                  )}
                 </div>
 
                 {/* Co-Proponente Toggle Box */}
@@ -807,6 +879,16 @@ export const ProposalForm: React.FC = () => {
                       error={errors['p2.salary']}
                     />
                     <InputField
+                      label="Outras Rendas Mensais do Titular 2 (R$)"
+                      name="p2.otherIncomes"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="0.00"
+                      value={formData.p2?.otherIncomes || ''}
+                      onChange={(e) => handleP2Change('otherIncomes', e.target.value)}
+                    />
+                    <InputField
                       label="Profissão do Titular 2 *"
                       name="p2.profession"
                       required
@@ -826,6 +908,48 @@ export const ProposalForm: React.FC = () => {
                       error={errors['p2.serviceTime']}
                     />
                   </div>
+                </div>
+
+                <div className="rounded-xl border border-[#334155] bg-[#0F172A] px-5">
+                  <h3 className="pt-4 text-xs font-bold uppercase tracking-widest text-[#FF6B1A]">
+                    Compromissos Financeiros Mensais (P2)
+                  </h3>
+                  <ToggleYesNo
+                    label="Possui parcelas de financiamento existentes?"
+                    value={formData.p2?.hasFinancing || 'nao'}
+                    onChange={(value) => handleP2Change('hasFinancing', value)}
+                  />
+                  {formData.p2?.hasFinancing === 'sim' && (
+                    <InputField
+                      label="Valor mensal das parcelas de financiamentos (R$)"
+                      name="p2.financingInstallment"
+                      type="number"
+                      min="0.01"
+                      step="0.01"
+                      required
+                      value={formData.p2.financingInstallment || ''}
+                      onChange={(event) => handleP2Change('financingInstallment', event.target.value)}
+                      error={errors['p2.financingInstallment']}
+                    />
+                  )}
+                  <ToggleYesNo
+                    label="Possui parcelas de empréstimos existentes?"
+                    value={formData.p2?.hasLoan || 'nao'}
+                    onChange={(value) => handleP2Change('hasLoan', value)}
+                  />
+                  {formData.p2?.hasLoan === 'sim' && (
+                    <InputField
+                      label="Valor mensal das parcelas de empréstimos (R$)"
+                      name="p2.loanInstallment"
+                      type="number"
+                      min="0.01"
+                      step="0.01"
+                      required
+                      value={formData.p2.loanInstallment || ''}
+                      onChange={(event) => handleP2Change('loanInstallment', event.target.value)}
+                      error={errors['p2.loanInstallment']}
+                    />
+                  )}
                 </div>
               </div>
             </div>

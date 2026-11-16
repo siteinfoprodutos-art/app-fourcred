@@ -15,7 +15,8 @@ Este diretório contém a infraestrutura completa de **automação, migrations v
     ├── 20261108000001_create_cadastros_table.sql
     ├── 20261108000002_create_administradores_and_historico.sql
     ├── 20261108000003_create_indexes_views_functions.sql
-    └── 20261108000004_create_rls_policies.sql
+    ├── 20261108000004_create_rls_policies.sql
+    └── 20261115000001_create_financial_simulations.sql
 ```
 
 ---
@@ -62,6 +63,16 @@ npm run db:status
   - `SELECT`, `UPDATE`, `DELETE`: Estritamente restritos a administradores autenticados com flag `ativo = true` em `public.administradores`.
 - **`administradores`** e **`historico_acessos`**:
   - Restritos estritamente a administradores autenticados e autorizados.
+- **`simulacoes_financiamento`**:
+  - SELECT, INSERT e UPDATE restritos a administradores autenticados e ativos.
+  - A tabela mantém cenários independentes por proposta e não altera `cadastros`.
+
+## 🧮 Simulações Financeiras
+
+A migration `20261115000001_create_financial_simulations.sql` cria a tabela de cenários e suas políticas RLS.
+O workflow de deploy apenas valida migrations em pushes; para aplicar uma migration, execute o workflow manualmente
+e marque `apply_migrations`. A opção de aplicação é desabilitada por padrão. Revise e valide a migration no ambiente
+alvo antes de autorizar qualquer aplicação em produção.
 
 ---
 
