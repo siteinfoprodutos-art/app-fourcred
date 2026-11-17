@@ -7,7 +7,9 @@ import {
   calculateFinancialSimulation,
   classifyUrbanMcmvIncome,
   effectiveMonthlyRateFromAnnualPercent,
+  formatFgtsServiceTime,
   getProposalFinancialIndicators,
+  parseFgtsServiceTimeMonths,
 } from './financialSimulationService.ts';
 import simulationRoutes from '../server/routes/simulationRoutes.ts';
 import { ProposalPayload, SimulationParameters } from '../types/proposal.ts';
@@ -161,6 +163,21 @@ test('urban MCMV income classification uses the published monthly income bands',
   assert.equal(classifyUrbanMcmvIncome(0), null);
 });
 
+test('FGTS employment periods parse and sum for a co-proponent household', () => {
+  const primaryMonths = parseFgtsServiceTimeMonths('3 anos e meio');
+  const coProposerMonths = parseFgtsServiceTimeMonths('48 meses');
+
+  assert.equal(primaryMonths, 42);
+  assert.equal(coProposerMonths, 48);
+  if (primaryMonths === null || coProposerMonths === null) {
+    assert.fail('Expected both FGTS periods to parse');
+  }
+  assert.equal(formatFgtsServiceTime(primaryMonths + coProposerMonths), '7 anos e 6 meses');
+  assert.equal(parseFgtsServiceTimeMonths('1 ano e 1 mês'), 13);
+  assert.equal(parseFgtsServiceTimeMonths(''), null);
+  assert.equal(parseFgtsServiceTimeMonths('tempo informado'), null);
+});
+
 test('multiple simulation scenarios persist independently for one proposal', async () => {
   const keys = [
     'SUPABASE_URL',
@@ -190,6 +207,15 @@ test('multiple simulation scenarios persist independently for one proposal', asy
             maxTermMonths: 420,
             rateInputUnit: 'annual',
             annualRatePercent: 7.93,
+            propertyValueCeiling: 600000,
+            propertyType: 'residential',
+            purpose: 'buy-used',
+            municipality: 'Campinas',
+            state: 'SP',
+            hasPropertyInSameMunicipality: false,
+            hasActiveHousingFinance: false,
+            hasUsedFgtsBefore: true,
+            receivedSubsidySinceMay2005: false,
           },
         }),
       });
@@ -214,6 +240,15 @@ test('multiple simulation scenarios persist independently for one proposal', asy
           maxTermMonths: 420,
           rateInputUnit: 'annual',
           annualRatePercent: 7.93,
+          propertyValueCeiling: 600000,
+          propertyType: 'residential',
+          purpose: 'buy-used',
+          municipality: 'Campinas',
+          state: 'SP',
+          hasPropertyInSameMunicipality: false,
+          hasActiveHousingFinance: false,
+          hasUsedFgtsBefore: true,
+          receivedSubsidySinceMay2005: false,
         },
       }),
     });
@@ -231,6 +266,15 @@ test('multiple simulation scenarios persist independently for one proposal', asy
     assert.equal(updatedScenario?.parameters.caixaProgram, 'mcmv-fgts');
     assert.equal(updatedScenario?.parameters.financingQuotaPercent, 80);
     assert.equal(updatedScenario?.parameters.annualRatePercent, 7.93);
+    assert.equal(updatedScenario?.parameters.propertyValueCeiling, 600000);
+    assert.equal(updatedScenario?.parameters.propertyType, 'residential');
+    assert.equal(updatedScenario?.parameters.purpose, 'buy-used');
+    assert.equal(updatedScenario?.parameters.municipality, 'Campinas');
+    assert.equal(updatedScenario?.parameters.state, 'SP');
+    assert.equal(updatedScenario?.parameters.hasPropertyInSameMunicipality, false);
+    assert.equal(updatedScenario?.parameters.hasActiveHousingFinance, false);
+    assert.equal(updatedScenario?.parameters.hasUsedFgtsBefore, true);
+    assert.equal(updatedScenario?.parameters.receivedSubsidySinceMay2005, false);
     assert.deepEqual(
       new Set(body.data.map((scenario) => scenario.parameters.amortizationSystem)),
       new Set(['sac', 'price'])

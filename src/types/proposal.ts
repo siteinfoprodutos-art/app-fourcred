@@ -74,6 +74,18 @@ export interface ProposalRecord {
 
 export type AmortizationSystem = 'sac' | 'price';
 
+export type SimulationPropertyType = 'residential' | 'commercial';
+
+export type SimulationPurpose =
+  | 'buy-new'
+  | 'buy-used'
+  | 'buy-land'
+  | 'build'
+  | 'secured-loan'
+  | 'caixa-property'
+  | 'renovate'
+  | 'reforma-casa-brasil';
+
 export interface SimulationParameters {
   propertyValue: number;
   downPayment: number;
@@ -85,8 +97,17 @@ export interface SimulationParameters {
   caixaProgram?: 'mcmv-fgts' | 'mcmv-procotista' | 'sbpe-tr' | 'outra';
   financingQuotaPercent?: number;
   maxTermMonths?: number;
+  propertyValueCeiling?: number;
   rateInputUnit?: 'monthly' | 'annual';
   annualRatePercent?: number;
+  propertyType?: SimulationPropertyType;
+  purpose?: SimulationPurpose;
+  municipality?: string;
+  state?: string;
+  hasPropertyInSameMunicipality?: boolean;
+  hasActiveHousingFinance?: boolean;
+  hasUsedFgtsBefore?: boolean;
+  receivedSubsidySinceMay2005?: boolean;
 }
 
 export interface SimulationInstallment {

@@ -6,6 +6,12 @@ import {
   SimulationParameters,
   SimulationResult,
 } from '../types/proposal';
+import {
+  classifyUrbanMcmvIncome,
+  formatFgtsServiceTime,
+  getProposalFinancialIndicators,
+  parseFgtsServiceTimeMonths,
+} from './financialSimulationService';
 
 /**
  * Helper to format currency values cleanly (e.g. R$ 450.000,00)
@@ -413,6 +419,32 @@ export const generateSimulationPDF = (
   const formatCurrency = (value: number) =>
     value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   const formatDate = (value: string) => new Date(value).toLocaleString('pt-BR');
+  const { familyGrossIncome } = getProposalFinancialIndicators(proposal.payload);
+  const incomeClassification = classifyUrbanMcmvIncome(familyGrossIncome);
+  const primaryFgtsMonths = parseFgtsServiceTimeMonths(proposal.payload.p1.serviceTime);
+  const coProposerFgtsMonths = proposal.payload.hasP2 && proposal.payload.p2
+    ? parseFgtsServiceTimeMonths(proposal.payload.p2.serviceTime)
+    : 0;
+  const totalFgtsMonths =
+    primaryFgtsMonths !== null && coProposerFgtsMonths !== null
+      ? primaryFgtsMonths + coProposerFgtsMonths
+      : null;
+  const caixaPrograms: Record<NonNullable<SimulationParameters['caixaProgram']>, string> = {
+    'mcmv-fgts': 'Minha Casa, Minha Vida — Recursos FGTS',
+    'mcmv-procotista': 'Minha Casa, Minha Vida / Pró-Cotista',
+    'sbpe-tr': 'SBPE — TR',
+    outra: 'Outra modalidade/condição consultada',
+  };
+  const purposes: Record<NonNullable<SimulationParameters['purpose']>, string> = {
+    'buy-new': 'Comprar imóvel novo',
+    'buy-used': 'Comprar imóvel usado',
+    'buy-land': 'Comprar terreno',
+    build: 'Construir em terreno próprio',
+    'secured-loan': 'Empréstimo com imóvel em garantia',
+    'caixa-property': 'Imóvel disponível para venda pela CAIXA',
+    renovate: 'Reformar ou ampliar imóvel',
+    'reforma-casa-brasil': 'Reforma Casa Brasil',
+  };
 
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(18);
@@ -437,13 +469,42 @@ export const generateSimulationPDF = (
       ...(parameters.annualRatePercent !== undefined
         ? [['Taxa efetiva anual consultada', `${parameters.annualRatePercent.toLocaleString('pt-BR')}% a.a.`]]
         : []),
+      ['Renda bruta familiar', formatCurrency(familyGrossIncome)],
+      ...(incomeClassification
+        ? [['Faixa indicativa de renda MCMV 2026', incomeClassification.label]]
+        : []),
       ['Prazo', `${parameters.termMonths} meses`],
-      ...(parameters.caixaProgram ? [['Linha CAIXA consultada', parameters.caixaProgram]] : []),
+      ...(parameters.caixaProgram ? [['Linha CAIXA consultada', caixaPrograms[parameters.caixaProgram]]] : []),
       ...(parameters.financingQuotaPercent !== undefined
         ? [['Cota máxima consultada', `${parameters.financingQuotaPercent}%`]]
         : []),
+      ...(parameters.propertyValueCeiling !== undefined
+        ? [['Teto de valor do imóvel consultado', formatCurrency(parameters.propertyValueCeiling)]]
+        : []),
       ...(parameters.maxTermMonths !== undefined
         ? [['Prazo máximo consultado', `${parameters.maxTermMonths} meses`]]
+        : []),
+      ...(parameters.propertyType
+        ? [['Tipo do imóvel', parameters.propertyType === 'residential' ? 'Residencial' : 'Comercial']]
+        : []),
+      ...(parameters.purpose ? [['Finalidade', purposes[parameters.purpose]]] : []),
+      ...(parameters.municipality && parameters.state
+        ? [['Localidade do imóvel', `${parameters.municipality}/${parameters.state}`]]
+        : []),
+      ...(totalFgtsMonths !== null
+        ? [['Tempo de trabalho sob regime do FGTS (soma declarada)', formatFgtsServiceTime(totalFgtsMonths)]]
+        : []),
+      ...(parameters.hasPropertyInSameMunicipality !== undefined
+        ? [['Outro imóvel residencial no município', parameters.hasPropertyInSameMunicipality ? 'Sim' : 'Não']]
+        : []),
+      ...(parameters.hasActiveHousingFinance !== undefined
+        ? [['Financiamento habitacional ativo SFH/FGTS', parameters.hasActiveHousingFinance ? 'Sim' : 'Não']]
+        : []),
+      ...(parameters.hasUsedFgtsBefore !== undefined
+        ? [['Já utilizou FGTS para aquisição', parameters.hasUsedFgtsBefore ? 'Sim' : 'Não']]
+        : []),
+      ...(parameters.receivedSubsidySinceMay2005 !== undefined
+        ? [['Subsídio FGTS/União desde maio de 2005', parameters.receivedSubsidySinceMay2005 ? 'Sim' : 'Não']]
         : []),
       ['Sistema', parameters.amortizationSystem.toUpperCase()],
       ['Primeira prestação', formatCurrency(result.firstInstallment)],

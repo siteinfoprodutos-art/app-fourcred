@@ -61,6 +61,39 @@ export const classifyUrbanMcmvIncome = (
   };
 };
 
+export const parseFgtsServiceTimeMonths = (serviceTime: string): number | null => {
+  const normalized = serviceTime.trim().toLowerCase();
+  if (!normalized) return null;
+
+  const yearsMatch = normalized.match(/(\d+(?:[.,]\d+)?)\s*anos?/);
+  const monthsMatch = normalized.match(/(\d+)\s*m[eê]s(?:es)?/);
+  let totalMonths = 0;
+  let hasDuration = false;
+
+  if (yearsMatch) {
+    totalMonths += Number(yearsMatch[1].replace(',', '.')) * 12;
+    hasDuration = true;
+    if (/anos?\s+e\s+meio/.test(normalized)) totalMonths += 6;
+  }
+  if (monthsMatch) {
+    totalMonths += Number(monthsMatch[1]);
+    hasDuration = true;
+  }
+
+  return hasDuration && Number.isFinite(totalMonths) ? Math.round(totalMonths) : null;
+};
+
+export const formatFgtsServiceTime = (months: number): string => {
+  const years = Math.floor(months / 12);
+  const remainingMonths = months % 12;
+  const parts: string[] = [];
+  if (years > 0) parts.push(`${years} ${years === 1 ? 'ano' : 'anos'}`);
+  if (remainingMonths > 0) {
+    parts.push(`${remainingMonths} ${remainingMonths === 1 ? 'mês' : 'meses'}`);
+  }
+  return parts.length > 0 ? parts.join(' e ') : '0 meses';
+};
+
 export const effectiveMonthlyRateFromAnnualPercent = (annualRatePercent: number): number => {
   if (!Number.isFinite(annualRatePercent) || annualRatePercent < 0) {
     throw new Error('A taxa anual deve ser um número não negativo.');

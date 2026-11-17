@@ -181,6 +181,57 @@ const getRequestParameters = (body: Record<string, unknown>): {
     }
     parameters.annualRatePercent = raw.annualRatePercent;
   }
+  if (raw.propertyValueCeiling !== undefined) {
+    if (
+      typeof raw.propertyValueCeiling !== 'number' ||
+      !Number.isFinite(raw.propertyValueCeiling) ||
+      raw.propertyValueCeiling <= 0
+    ) {
+      return null;
+    }
+    parameters.propertyValueCeiling = raw.propertyValueCeiling;
+  }
+  if (raw.propertyType !== undefined) {
+    if (raw.propertyType !== 'residential' && raw.propertyType !== 'commercial') return null;
+    parameters.propertyType = raw.propertyType;
+  }
+  if (raw.purpose !== undefined) {
+    const allowedPurposes = [
+      'buy-new',
+      'buy-used',
+      'buy-land',
+      'build',
+      'secured-loan',
+      'caixa-property',
+      'renovate',
+      'reforma-casa-brasil',
+    ];
+    if (typeof raw.purpose !== 'string' || !allowedPurposes.includes(raw.purpose)) return null;
+    parameters.purpose = raw.purpose as SimulationParameters['purpose'];
+  }
+  if (raw.municipality !== undefined) {
+    if (typeof raw.municipality !== 'string' || raw.municipality.trim().length > 100) return null;
+    parameters.municipality = raw.municipality.trim();
+  }
+  if (raw.state !== undefined) {
+    const allowedStates = [
+      'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS', 'MG',
+      'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO',
+    ];
+    if (typeof raw.state !== 'string' || !allowedStates.includes(raw.state)) return null;
+    parameters.state = raw.state;
+  }
+  for (const field of [
+    'hasPropertyInSameMunicipality',
+    'hasActiveHousingFinance',
+    'hasUsedFgtsBefore',
+    'receivedSubsidySinceMay2005',
+  ] as const) {
+    if (raw[field] !== undefined) {
+      if (typeof raw[field] !== 'boolean') return null;
+      parameters[field] = raw[field];
+    }
+  }
   return { scenarioName, parameters };
 };
 
