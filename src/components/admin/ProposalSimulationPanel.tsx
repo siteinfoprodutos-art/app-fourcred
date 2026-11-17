@@ -6,7 +6,12 @@ import {
   SimulationParameters,
   SimulationResult,
 } from '../../types/proposal';
-import { calculateFinancialSimulation } from '../../services/financialSimulationService';
+import {
+  calculateFinancialSimulation,
+  classifyUrbanMcmvIncome,
+  effectiveMonthlyRateFromAnnualPercent,
+  getProposalFinancialIndicators,
+} from '../../services/financialSimulationService';
 import { proposalService } from '../../services/proposalService';
 import { generateSimulationPDF } from '../../services/pdfService';
 
@@ -14,6 +19,33 @@ const formatCurrency = (value: number) =>
   value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
 const formatDate = (date: string) => new Date(date).toLocaleString('pt-BR');
+
+interface SimulationInputValues {
+  propertyValue: string;
+  downPayment: string;
+  fgtsValue: string;
+  financedAmount: string;
+  monthlyRatePercent: string;
+  termValue: string;
+}
+
+type CurrencyInputField = 'propertyValue' | 'downPayment' | 'fgtsValue' | 'financedAmount';
+
+const formatCurrencyInput = (value: number): string =>
+  value.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+const parseCurrencyInput = (value: string): number => {
+  if (value.trim() === '') return Number.NaN;
+  const digits = value.replace(/\D/g, '');
+  return digits ? Number(digits) / 100 : Number.NaN;
+};
+
+const maskCurrencyInput = (value: string): string => {
+  if (value.trim() === '') return '';
+  const digits = value.replace(/\D/g, '');
+  if (!digits) return '';
+  return formatCurrencyInput(Number(digits) / 100);
+};
 
 const initialParameters = (proposal: ProposalRecord): SimulationParameters => {
   const payload = proposal.payload;
@@ -29,18 +61,42 @@ const initialParameters = (proposal: ProposalRecord): SimulationParameters => {
     downPayment,
     fgtsValue,
     financedAmount: requestedAmount,
-    monthlyRatePercent: 0,
+    monthlyRatePercent: Number.NaN,
     termMonths: Number.isSafeInteger(requestedTerm) && requestedTerm > 0 ? requestedTerm : 360,
     amortizationSystem: payload.amortizationSystem?.toLowerCase() === 'price' ? 'price' : 'sac',
   };
 };
+
+const inputValuesFromParameters = (
+  parameters: SimulationParameters,
+  termUnit: 'months' | 'years'
+): SimulationInputValues => ({
+  propertyValue: formatCurrencyInput(parameters.propertyValue),
+  downPayment: formatCurrencyInput(parameters.downPayment),
+  fgtsValue: formatCurrencyInput(parameters.fgtsValue),
+  financedAmount: formatCurrencyInput(parameters.financedAmount),
+  monthlyRatePercent:
+    parameters.annualRatePercent !== undefined
+      ? String(parameters.annualRatePercent)
+      : Number.isFinite(parameters.monthlyRatePercent)
+        ? String(parameters.monthlyRatePercent)
+        : '',
+  termValue: String(
+    termUnit === 'years' ? parameters.termMonths / 12 : parameters.termMonths
+  ),
+});
+
+const parseInputValue = (value: string): number =>
+  value.trim() === '' ? Number.NaN : Number(value);
 
 const ResultSummary: React.FC<{
   proposal: ProposalRecord;
   scenarioName: string;
   parameters: SimulationParameters;
   result: SimulationResult;
-}> = ({ proposal, scenarioName, parameters, result }) => (
+}> = ({ proposal, scenarioName, parameters, result }) => {
+  const familyIncome = getProposalFinancialIndicators(proposal.payload).familyGrossIncome;
+  return (
   <div className="rounded-xl border border-[#FF6B1A]/30 bg-[#FF6B1A]/5 p-4">
     <div className="flex flex-wrap items-start justify-between gap-3">
       <div>
@@ -68,10 +124,24 @@ const ResultSummary: React.FC<{
       <div><span className="block text-[#CBD5E1]/50">Entrada</span><b>{formatCurrency(parameters.downPayment)}</b></div>
       <div><span className="block text-[#CBD5E1]/50">FGTS</span><b>{formatCurrency(parameters.fgtsValue)}</b></div>
       <div><span className="block text-[#CBD5E1]/50">Financiado</span><b>{formatCurrency(parameters.financedAmount)}</b></div>
-      <div><span className="block text-[#CBD5E1]/50">Taxa mensal</span><b>{parameters.monthlyRatePercent.toLocaleString('pt-BR')}%</b></div>
+      <div><span className="block text-[#CBD5E1]/50">Taxa mensal efetiva</span><b>{parameters.monthlyRatePercent.toLocaleString('pt-BR')}%</b></div>
+      {parameters.annualRatePercent !== undefined && (
+        <div><span className="block text-[#CBD5E1]/50">Taxa anual consultada</span><b>{parameters.annualRatePercent.toLocaleString('pt-BR')}% a.a.</b></div>
+      )}
       <div><span className="block text-[#CBD5E1]/50">Prazo</span><b>{parameters.termMonths} meses</b></div>
       <div><span className="block text-[#CBD5E1]/50">Amortização</span><b>{parameters.amortizationSystem.toUpperCase()}</b></div>
+      {parameters.caixaProgram && (
+        <div><span className="block text-[#CBD5E1]/50">Linha consultada</span><b>{parameters.caixaProgram}</b></div>
+      )}
+      {parameters.financingQuotaPercent !== undefined && (
+        <div><span className="block text-[#CBD5E1]/50">Cota informada</span><b>{parameters.financingQuotaPercent}%</b></div>
+      )}
       <div><span className="block text-[#CBD5E1]/50">1ª prestação</span><b>{formatCurrency(result.firstInstallment)}</b></div>
+      {familyIncome > 0 && (
+        <div><span className="block text-[#CBD5E1]/50">1ª parcela / renda familiar</span>
+          <b>{((result.firstInstallment / familyIncome) * 100).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%</b>
+        </div>
+      )}
       <div><span className="block text-[#CBD5E1]/50">Última prestação</span><b>{formatCurrency(result.lastInstallment)}</b></div>
       <div><span className="block text-[#CBD5E1]/50">Total estimado pago</span><b>{formatCurrency(result.totalPaid)}</b></div>
       <div><span className="block text-[#CBD5E1]/50">Total estimado de juros</span><b>{formatCurrency(result.totalInterest)}</b></div>
@@ -81,7 +151,8 @@ const ResultSummary: React.FC<{
       Inclui somente amortização e juros calculados; não inclui seguros obrigatórios, TR, tarifas ou outros encargos.
     </p>
   </div>
-);
+  );
+};
 
 const InstallmentSchedule: React.FC<{ title: string; result: SimulationResult }> = ({ title, result }) => (
   <div className="min-w-0 overflow-hidden rounded-xl border border-[#334155] bg-[#0F172A]">
@@ -119,9 +190,19 @@ export const ProposalSimulationPanel: React.FC<{
   onSaved: () => void;
   onCancelEdit: () => void;
 }> = ({ proposal, editingSimulation, onSaved, onCancelEdit }) => {
-  const [parameters, setParameters] = useState<SimulationParameters>(() => initialParameters(proposal));
-  const [scenarioName, setScenarioName] = useState('');
   const [termUnit, setTermUnit] = useState<'months' | 'years'>('years');
+  const [rateInputUnit, setRateInputUnit] = useState<'monthly' | 'annual'>('annual');
+  const [caixaProgram, setCaixaProgram] = useState<
+    '' | 'mcmv-fgts' | 'mcmv-procotista' | 'sbpe-tr' | 'outra'
+  >('');
+  const [caixaFinancingCapInput, setCaixaFinancingCapInput] = useState('');
+  const [caixaMaxTermInput, setCaixaMaxTermInput] = useState('');
+  const [inputValues, setInputValues] = useState<SimulationInputValues>(() =>
+    inputValuesFromParameters(initialParameters(proposal), 'years')
+  );
+  const [amortizationSystem, setAmortizationSystem] =
+    useState<SimulationParameters['amortizationSystem']>(() => initialParameters(proposal).amortizationSystem);
+  const [scenarioName, setScenarioName] = useState('');
   const [scheduleSystem, setScheduleSystem] = useState<'sac' | 'price'>('sac');
   const [financedAmountManual, setFinancedAmountManual] = useState(false);
   const [savingSystem, setSavingSystem] = useState<'sac' | 'price' | null>(null);
@@ -130,13 +211,59 @@ export const ProposalSimulationPanel: React.FC<{
 
   useEffect(() => {
     if (!editingSimulation) return;
-    setParameters(editingSimulation.parameters);
+    const unit = editingSimulation.parameters.termMonths % 12 === 0 ? 'years' : 'months';
+    setTermUnit(unit);
+    setInputValues(inputValuesFromParameters(editingSimulation.parameters, unit));
+    setAmortizationSystem(editingSimulation.parameters.amortizationSystem);
     setScenarioName(editingSimulation.scenarioName);
     setFinancedAmountManual(true);
-    setTermUnit(editingSimulation.parameters.termMonths % 12 === 0 ? 'years' : 'months');
+    setRateInputUnit(editingSimulation.parameters.rateInputUnit || 'monthly');
+    setCaixaProgram(editingSimulation.parameters.caixaProgram || '');
+    setCaixaFinancingCapInput(
+      editingSimulation.parameters.financingQuotaPercent === undefined
+        ? ''
+        : String(editingSimulation.parameters.financingQuotaPercent)
+    );
+    setCaixaMaxTermInput(
+      editingSimulation.parameters.maxTermMonths === undefined
+        ? ''
+        : String(editingSimulation.parameters.maxTermMonths)
+    );
     setErrorMessage(null);
     setSuccessMessage(null);
   }, [editingSimulation]);
+
+  const parameters = useMemo<SimulationParameters>(
+    () => ({
+      propertyValue: parseCurrencyInput(inputValues.propertyValue),
+      downPayment: parseCurrencyInput(inputValues.downPayment),
+      fgtsValue: parseCurrencyInput(inputValues.fgtsValue),
+      financedAmount: parseCurrencyInput(inputValues.financedAmount),
+      monthlyRatePercent: (() => {
+        const enteredRatePercent = parseInputValue(inputValues.monthlyRatePercent);
+        if (!Number.isFinite(enteredRatePercent)) return Number.NaN;
+        return rateInputUnit === 'annual'
+          ? effectiveMonthlyRateFromAnnualPercent(enteredRatePercent)
+          : enteredRatePercent;
+      })(),
+      termMonths:
+        parseInputValue(inputValues.termValue) * (termUnit === 'years' ? 12 : 1),
+      amortizationSystem,
+      rateInputUnit,
+      ...(rateInputUnit === 'annual' && Number.isFinite(parseInputValue(inputValues.monthlyRatePercent))
+        ? { annualRatePercent: parseInputValue(inputValues.monthlyRatePercent) }
+        : {}),
+      ...(caixaProgram ? { caixaProgram } : {}),
+      ...(parseInputValue(caixaFinancingCapInput) > 0
+        ? { financingQuotaPercent: parseInputValue(caixaFinancingCapInput) }
+        : {}),
+      ...(Number.isSafeInteger(parseInputValue(caixaMaxTermInput)) &&
+      parseInputValue(caixaMaxTermInput) > 0
+        ? { maxTermMonths: parseInputValue(caixaMaxTermInput) }
+        : {}),
+    }),
+    [amortizationSystem, caixaFinancingCapInput, caixaMaxTermInput, caixaProgram, inputValues, rateInputUnit, termUnit]
+  );
 
   const calculations = useMemo(() => {
     try {
@@ -149,31 +276,130 @@ export const ProposalSimulationPanel: React.FC<{
       return {
         sac: null,
         price: null,
-        error: error instanceof Error ? error.message : 'Parâmetros inválidos.',
+        error: Number.isNaN(parameters.monthlyRatePercent)
+          ? 'Informe a taxa mensal consultada na CAIXA. Use 0 somente se essa for a taxa da condição consultada.'
+          : error instanceof Error ? error.message : 'Parâmetros inválidos.',
       };
     }
   }, [parameters]);
 
-  const expectedFinancedAmount =
-    parameters.propertyValue - parameters.downPayment - parameters.fgtsValue;
-  const financedAmountDiffers = Math.abs(parameters.financedAmount - expectedFinancedAmount) >= 0.01;
+  const expectedFinancedAmount = parameters.propertyValue - parameters.downPayment - parameters.fgtsValue;
+  const financedAmountDiffers =
+    Number.isFinite(expectedFinancedAmount) &&
+    Number.isFinite(parameters.financedAmount) &&
+    Math.abs(parameters.financedAmount - expectedFinancedAmount) >= 0.01;
+  const caixaFinancingCapPercent = parameters.financingQuotaPercent;
+  const caixaMaxFinancedAmount =
+    Number.isFinite(parameters.propertyValue) && caixaFinancingCapPercent !== undefined
+      ? parameters.propertyValue * (caixaFinancingCapPercent / 100)
+      : 0;
+  const financedAmountAboveCaixaCap =
+    Number.isFinite(parameters.financedAmount) &&
+    caixaMaxFinancedAmount > 0 &&
+    parameters.financedAmount > caixaMaxFinancedAmount + 0.01;
+  const termAboveCaixaLimit =
+    parameters.maxTermMonths !== undefined && parameters.termMonths > parameters.maxTermMonths;
+  const minimumTotalOwnContribution =
+    caixaFinancingCapPercent !== undefined
+      ? parameters.propertyValue * (1 - caixaFinancingCapPercent / 100)
+      : 0;
+  const minimumCashDownPayment = Math.max(0, minimumTotalOwnContribution - parameters.fgtsValue);
+  const entryBelowCaixaMinimum =
+    caixaFinancingCapPercent !== undefined &&
+    parameters.downPayment + parameters.fgtsValue + 0.01 < minimumTotalOwnContribution;
+  const familyIncome = getProposalFinancialIndicators(proposal.payload).familyGrossIncome;
+  const mcmvIncomeClassification = classifyUrbanMcmvIncome(familyIncome);
 
-  const updateParameter = (field: keyof SimulationParameters, value: number | string) => {
-    if (field === 'propertyValue' || field === 'downPayment' || field === 'fgtsValue') {
-      setFinancedAmountManual(false);
-    } else if (field === 'financedAmount') {
-      setFinancedAmountManual(true);
-    }
-    setParameters((previous) => {
-      const updated = { ...previous, [field]: value };
-      if (field === 'propertyValue' || field === 'downPayment' || field === 'fgtsValue') {
-        updated.financedAmount = Math.max(
-          0,
-          Number(updated.propertyValue) - Number(updated.downPayment) - Number(updated.fgtsValue)
-        );
+  const updateAmount = (
+    field: CurrencyInputField | 'monthlyRatePercent',
+    value: string
+  ) => {
+    const normalizedValue =
+      field === 'monthlyRatePercent' ? value : maskCurrencyInput(value);
+    const updatesLoanAmount =
+      field === 'propertyValue' || field === 'downPayment' || field === 'fgtsValue';
+    if (updatesLoanAmount) setFinancedAmountManual(false);
+    if (field === 'financedAmount') setFinancedAmountManual(true);
+
+    setInputValues((previous) => {
+      const updated = { ...previous, [field]: normalizedValue };
+      if (updatesLoanAmount) {
+        const propertyValue = parseCurrencyInput(updated.propertyValue);
+        const downPayment = parseCurrencyInput(updated.downPayment);
+        const fgtsValue = parseCurrencyInput(updated.fgtsValue);
+        const quotaPercent = parseInputValue(caixaFinancingCapInput);
+        const amountNeeded = propertyValue - downPayment - fgtsValue;
+        const quotaLimit =
+          Number.isFinite(quotaPercent) && quotaPercent > 0
+            ? propertyValue * (quotaPercent / 100)
+            : Number.POSITIVE_INFINITY;
+        updated.financedAmount =
+          [propertyValue, downPayment, fgtsValue].every(Number.isFinite)
+            ? formatCurrencyInput(Math.max(0, Math.min(amountNeeded, quotaLimit)))
+            : '';
       }
       return updated;
     });
+    setErrorMessage(null);
+    setSuccessMessage(null);
+  };
+
+  const updateCaixaQuota = (value: string) => {
+    setCaixaFinancingCapInput(value);
+    setFinancedAmountManual(false);
+    const quotaPercent = parseInputValue(value);
+    setInputValues((previous) => {
+      const propertyValue = parseCurrencyInput(previous.propertyValue);
+      const downPayment = parseCurrencyInput(previous.downPayment);
+      const fgtsValue = parseCurrencyInput(previous.fgtsValue);
+      if (![propertyValue, downPayment, fgtsValue].every(Number.isFinite)) return previous;
+      const amountNeeded = propertyValue - downPayment - fgtsValue;
+      const quotaLimit =
+        Number.isFinite(quotaPercent) && quotaPercent > 0
+          ? propertyValue * (quotaPercent / 100)
+          : Number.POSITIVE_INFINITY;
+      return {
+        ...previous,
+        financedAmount: formatCurrencyInput(Math.max(0, Math.min(amountNeeded, quotaLimit))),
+      };
+    });
+    setErrorMessage(null);
+    setSuccessMessage(null);
+  };
+
+  const updateTermUnit = (unit: 'months' | 'years') => {
+    if (unit !== termUnit) {
+      const currentValue = parseInputValue(inputValues.termValue);
+      setInputValues((previous) => ({
+        ...previous,
+        termValue: Number.isFinite(currentValue)
+          ? String(currentValue * (termUnit === 'years' ? 12 : 1) / (unit === 'years' ? 12 : 1))
+          : '',
+      }));
+      setTermUnit(unit);
+    }
+  };
+
+  const updateRateInputUnit = (unit: 'monthly' | 'annual') => {
+    if (unit === rateInputUnit) return;
+    const enteredRatePercent = parseInputValue(inputValues.monthlyRatePercent);
+    if (Number.isFinite(enteredRatePercent)) {
+      const convertedRate =
+        unit === 'monthly'
+          ? effectiveMonthlyRateFromAnnualPercent(enteredRatePercent)
+          : ((1 + enteredRatePercent / 100) ** 12 - 1) * 100;
+      setInputValues((previous) => ({
+        ...previous,
+        monthlyRatePercent: String(convertedRate),
+      }));
+    }
+    setRateInputUnit(unit);
+    setErrorMessage(null);
+    setSuccessMessage(null);
+  };
+
+  const updateAmortizationSystem = (system: SimulationParameters['amortizationSystem']) => {
+    setAmortizationSystem(system);
     setErrorMessage(null);
     setSuccessMessage(null);
   };
@@ -224,56 +450,183 @@ export const ProposalSimulationPanel: React.FC<{
         </div>
       )}
 
+      <div className="rounded-xl border border-[#334155] bg-[#0F172A]/70 p-3 text-xs text-[#CBD5E1]/70">
+        Os dados iniciais abaixo foram carregados do formulário original da proposta. Alterações aqui
+        afetam somente esta simulação, sem modificar o cadastro do cliente.
+      </div>
+
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <label className="text-xs text-[#CBD5E1]/70">
           Valor do imóvel
-          <input type="number" min="0.01" step="0.01" value={parameters.propertyValue}
-            onChange={(event) => updateParameter('propertyValue', Number(event.target.value) || 0)}
-            className="mt-1 w-full rounded-lg border border-[#334155] bg-[#0F172A] px-3 py-2 text-sm text-white outline-none focus:border-[#FF6B1A]" />
+          <div className="relative mt-1">
+            <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-[#CBD5E1]/50">R$</span>
+            <input type="text" inputMode="decimal" value={inputValues.propertyValue}
+              onChange={(event) => updateAmount('propertyValue', event.target.value)}
+              className="w-full rounded-lg border border-[#334155] bg-[#0F172A] py-2 pl-9 pr-3 text-sm text-white outline-none focus:border-[#FF6B1A]" />
+          </div>
         </label>
+        <div className="rounded-lg border border-[#334155] bg-[#0F172A] px-3 py-2 text-xs">
+          <span className="block text-[#CBD5E1]/60">Renda bruta familiar do formulário</span>
+          <strong className="mt-1 block text-sm text-white">{formatCurrency(familyIncome)}</strong>
+          <div className="mt-2 border-t border-[#334155] pt-2">
+            <span className="block text-[10px] text-[#CBD5E1]/60">
+              Enquadramento indicativo por renda (MCMV urbano)
+            </span>
+            {mcmvIncomeClassification ? (
+              <>
+                <strong className="mt-1 block text-xs text-[#FFB27F]">
+                  {mcmvIncomeClassification.label}
+                </strong>
+                <span className="mt-0.5 block text-[10px] text-[#CBD5E1]/70">
+                  {mcmvIncomeClassification.incomeRange}
+                </span>
+                {!mcmvIncomeClassification.withinUrbanIncomeLimit && (
+                  <p className="mt-1 text-[10px] leading-relaxed text-amber-200/80">
+                    Isso indica somente que a renda ultrapassa o limite urbano informado para o MCMV;
+                    outras linhas de crédito podem existir.
+                  </p>
+                )}
+              </>
+            ) : (
+              <span className="mt-1 block text-[10px] text-[#CBD5E1]/70">
+                Não há renda familiar informada para indicar uma faixa.
+              </span>
+            )}
+            <p className="mt-1 text-[10px] leading-relaxed text-[#CBD5E1]/60">
+              A faixa de renda não confirma elegibilidade. O limite do imóvel depende da localidade e da
+              modalidade; a taxa deve ser informada conforme consulta da condição vigente.
+            </p>
+            <a
+              href="https://www.gov.br/cidades/pt-br/composicao/ouvidoria/perguntas-frequentes/perguntas-frequentes"
+              target="_blank"
+              rel="noreferrer"
+              className="mt-1 inline-block text-[10px] font-semibold text-[#FFB27F] hover:underline"
+            >
+              Consultar FAQ oficial do Ministério das Cidades
+            </a>
+          </div>
+        </div>
         <label className="text-xs text-[#CBD5E1]/70">
           Entrada
-          <input type="number" min="0" step="0.01" value={parameters.downPayment}
-            onChange={(event) => updateParameter('downPayment', Number(event.target.value) || 0)}
-            className="mt-1 w-full rounded-lg border border-[#334155] bg-[#0F172A] px-3 py-2 text-sm text-white outline-none focus:border-[#FF6B1A]" />
+          <div className="relative mt-1">
+            <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-[#CBD5E1]/50">R$</span>
+            <input type="text" inputMode="decimal" value={inputValues.downPayment}
+              onChange={(event) => updateAmount('downPayment', event.target.value)}
+              className="w-full rounded-lg border border-[#334155] bg-[#0F172A] py-2 pl-9 pr-3 text-sm text-white outline-none focus:border-[#FF6B1A]" />
+          </div>
+          {caixaFinancingCapPercent !== undefined && (
+            <span className="mt-1 block text-[10px] text-[#CBD5E1]/60">
+              Entrada mínima para a cota consultada: {formatCurrency(minimumCashDownPayment)}
+              {parameters.fgtsValue > 0
+                ? `, considerando ${formatCurrency(parameters.fgtsValue)} de FGTS.`
+                : '.'}
+            </span>
+          )}
         </label>
         <label className="text-xs text-[#CBD5E1]/70">
           FGTS utilizado
-          <input type="number" min="0" step="0.01" value={parameters.fgtsValue}
-            onChange={(event) => updateParameter('fgtsValue', Number(event.target.value) || 0)}
-            className="mt-1 w-full rounded-lg border border-[#334155] bg-[#0F172A] px-3 py-2 text-sm text-white outline-none focus:border-[#FF6B1A]" />
+          <div className="relative mt-1">
+            <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-[#CBD5E1]/50">R$</span>
+            <input type="text" inputMode="decimal" value={inputValues.fgtsValue}
+              onChange={(event) => updateAmount('fgtsValue', event.target.value)}
+              className="w-full rounded-lg border border-[#334155] bg-[#0F172A] py-2 pl-9 pr-3 text-sm text-white outline-none focus:border-[#FF6B1A]" />
+          </div>
         </label>
         <label className="text-xs text-[#CBD5E1]/70">
           Valor financiado
-          <input type="number" min="0.01" step="0.01" value={parameters.financedAmount}
-            onChange={(event) => updateParameter('financedAmount', Number(event.target.value) || 0)}
-            className="mt-1 w-full rounded-lg border border-[#334155] bg-[#0F172A] px-3 py-2 text-sm text-white outline-none focus:border-[#FF6B1A]" />
+          <div className="relative mt-1">
+            <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center text-sm text-[#CBD5E1]/50">R$</span>
+            <input type="text" inputMode="decimal" value={inputValues.financedAmount}
+              onChange={(event) => updateAmount('financedAmount', event.target.value)}
+              className="w-full rounded-lg border border-[#334155] bg-[#0F172A] py-2 pl-9 pr-3 text-sm text-white outline-none focus:border-[#FF6B1A]" />
+          </div>
         </label>
         <label className="text-xs text-[#CBD5E1]/70">
-          Taxa de juros mensal (%)
-          <input type="number" min="0" step="0.0001" value={parameters.monthlyRatePercent}
-            onChange={(event) => updateParameter('monthlyRatePercent', Number(event.target.value) || 0)}
-            className="mt-1 w-full rounded-lg border border-[#334155] bg-[#0F172A] px-3 py-2 text-sm text-white outline-none focus:border-[#FF6B1A]" />
-          <span className="mt-1 block text-[10px] text-amber-200/80">
-            Informe a condição consultada em fonte autorizada. Nenhuma taxa é presumida.
+          Programa CAIXA consultado
+          <select
+            value={caixaProgram}
+            onChange={(event) => setCaixaProgram(event.target.value as typeof caixaProgram)}
+            className="mt-1 w-full rounded-lg border border-[#334155] bg-[#0F172A] px-3 py-2 text-sm text-white outline-none focus:border-[#FF6B1A]"
+          >
+            <option value="">Selecione conforme a consulta</option>
+            <option value="mcmv-fgts">Minha Casa, Minha Vida - Recursos FGTS</option>
+            <option value="mcmv-procotista">Minha Casa, Minha Vida/Pró-Cotista</option>
+            <option value="sbpe-tr">SBPE (TR): Taxa Balcão</option>
+            <option value="outra">Outra modalidade/condição consultada</option>
+          </select>
+        </label>
+        <label className="text-xs text-[#CBD5E1]/70">
+          Cota máxima do financiamento consultada (%)
+          <input
+            type="number"
+            min="0.01"
+            max="100"
+            step="0.01"
+            value={caixaFinancingCapInput}
+            onChange={(event) => updateCaixaQuota(event.target.value)}
+            className="mt-1 w-full rounded-lg border border-[#334155] bg-[#0F172A] px-3 py-2 text-sm text-white outline-none focus:border-[#FF6B1A]"
+          />
+          <span className="mt-1 block text-[10px] text-[#CBD5E1]/60">
+            Informe a cota mostrada pelo simulador CAIXA para esta proposta. Não há percentual presumido.
           </span>
+        </label>
+        <label className="text-xs text-[#CBD5E1]/70">
+          Prazo máximo permitido pela linha consultada (meses)
+          <input
+            type="number"
+            min="1"
+            step="1"
+            value={caixaMaxTermInput}
+            onChange={(event) => setCaixaMaxTermInput(event.target.value)}
+            className="mt-1 w-full rounded-lg border border-[#334155] bg-[#0F172A] px-3 py-2 text-sm text-white outline-none focus:border-[#FF6B1A]"
+          />
         </label>
         <div className="grid grid-cols-[1fr_auto] gap-2">
           <label className="text-xs text-[#CBD5E1]/70">
-            Prazo ({termUnit === 'years' ? 'anos' : 'meses'})
-            <input type="number" min="1" step="1"
-              value={termUnit === 'years' ? parameters.termMonths / 12 : parameters.termMonths}
-              onChange={(event) =>
-                updateParameter(
-                  'termMonths',
-                  (Number(event.target.value) || 0) * (termUnit === 'years' ? 12 : 1)
-                )
-              }
+            Taxa de juros efetiva ({rateInputUnit === 'annual' ? '% a.a.' : '% a.m.'})
+            <input type="number" min="0" step="0.0001" value={inputValues.monthlyRatePercent}
+              onChange={(event) => updateAmount('monthlyRatePercent', event.target.value)}
               className="mt-1 w-full rounded-lg border border-[#334155] bg-[#0F172A] px-3 py-2 text-sm text-white outline-none focus:border-[#FF6B1A]" />
           </label>
           <label className="self-end text-xs text-[#CBD5E1]/70">
             Unidade
-            <select value={termUnit} onChange={(event) => setTermUnit(event.target.value as 'months' | 'years')}
+            <select
+              value={rateInputUnit}
+              onChange={(event) => updateRateInputUnit(event.target.value as 'monthly' | 'annual')}
+              className="mt-1 h-[38px] rounded-lg border border-[#334155] bg-[#0F172A] px-2 text-xs text-white"
+            >
+              <option value="annual">% a.a.</option>
+              <option value="monthly">% a.m.</option>
+            </select>
+          </label>
+          <span className="col-span-2 text-[10px] text-amber-200/80">
+            Informe a taxa efetiva da condição CAIXA. A taxa anual é convertida em equivalente mensal para o cálculo.
+          </span>
+          <span className="mt-1 block text-[10px] text-amber-200/80">
+            A taxa utilizada é de entrada manual; nenhuma condição é presumida.
+          </span>
+          {parameters.monthlyRatePercent === 0 && (
+            <span className="mt-1 block text-[10px] text-sky-200/80">
+              Com taxa de 0%, SAC e PRICE resultam na mesma prestação. Com juros, a prestação SAC
+              começa maior e diminui; a PRICE mantém prestações iguais.
+            </span>
+          )}
+        </div>
+        <div className="grid grid-cols-[1fr_auto] gap-2">
+          <label className="text-xs text-[#CBD5E1]/70">
+            Prazo ({termUnit === 'years' ? 'anos' : 'meses'})
+            <input type="number" min="1" step="1"
+              value={inputValues.termValue}
+              onChange={(event) => {
+                setInputValues((previous) => ({ ...previous, termValue: event.target.value }));
+                setErrorMessage(null);
+                setSuccessMessage(null);
+              }}
+              className="mt-1 w-full rounded-lg border border-[#334155] bg-[#0F172A] px-3 py-2 text-sm text-white outline-none focus:border-[#FF6B1A]" />
+          </label>
+          <label className="self-end text-xs text-[#CBD5E1]/70">
+            Unidade
+            <select value={termUnit} onChange={(event) => updateTermUnit(event.target.value as 'months' | 'years')}
               className="mt-1 h-[38px] rounded-lg border border-[#334155] bg-[#0F172A] px-2 text-xs text-white">
               <option value="years">Anos</option>
               <option value="months">Meses</option>
@@ -282,8 +635,8 @@ export const ProposalSimulationPanel: React.FC<{
         </div>
         <label className="text-xs text-[#CBD5E1]/70">
           Sistema do cenário a salvar
-          <select value={parameters.amortizationSystem}
-            onChange={(event) => updateParameter('amortizationSystem', event.target.value)}
+          <select value={amortizationSystem}
+            onChange={(event) => updateAmortizationSystem(event.target.value as SimulationParameters['amortizationSystem'])}
             className="mt-1 w-full rounded-lg border border-[#334155] bg-[#0F172A] px-3 py-2 text-sm text-white">
             <option value="sac">SAC</option>
             <option value="price">PRICE</option>
@@ -305,6 +658,34 @@ export const ProposalSimulationPanel: React.FC<{
             {financedAmountManual
               ? ' O valor foi ajustado manualmente e será mantido na simulação.'
               : ' O valor recebido na proposta foi mantido como referência inicial.'}
+          </span>
+        </div>
+      )}
+      {entryBelowCaixaMinimum && (
+        <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-[11px] text-amber-100">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
+          <span>
+            Para a cota de {caixaFinancingCapPercent}% informada, entrada + FGTS precisam somar pelo menos{' '}
+            {formatCurrency(minimumTotalOwnContribution)}. Com o FGTS atual, a entrada mínima estimada é{' '}
+            {formatCurrency(minimumCashDownPayment)}. Confirme a condição no simulador CAIXA.
+          </span>
+        </div>
+      )}
+      {financedAmountAboveCaixaCap && (
+        <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-[11px] text-amber-100">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
+          <span>
+            Valor financiado acima da cota máxima informada para a linha consultada ({formatCurrency(caixaMaxFinancedAmount)}).
+            O limite foi informado manualmente pelo funcionário e não representa aprovação do crédito.
+          </span>
+        </div>
+      )}
+      {termAboveCaixaLimit && (
+        <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 text-[11px] text-amber-100">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
+          <span>
+            Prazo da simulação acima do limite informado para a linha consultada ({parameters.maxTermMonths} meses).
+            Ajuste o prazo para a condição oficial consultada.
           </span>
         </div>
       )}
@@ -357,7 +738,18 @@ export const ProposalSimulationPanel: React.FC<{
                     <span className="text-[#CBD5E1]/60">Última prestação</span><b>{formatCurrency(result.lastInstallment)}</b>
                     <span className="text-[#CBD5E1]/60">Total estimado pago</span><b>{formatCurrency(result.totalPaid)}</b>
                     <span className="text-[#CBD5E1]/60">Total estimado de juros</span><b>{formatCurrency(result.totalInterest)}</b>
+                    {familyIncome > 0 && (
+                      <>
+                        <span className="text-[#CBD5E1]/60">1ª parcela / renda familiar</span>
+                        <b>{((result.firstInstallment / familyIncome) * 100).toLocaleString('pt-BR', { maximumFractionDigits: 2 })}%</b>
+                      </>
+                    )}
                   </div>
+                  {familyIncome > 0 && (
+                    <p className="mt-2 text-[10px] text-[#CBD5E1]/50">
+                      Indicador matemático sobre a renda informada; não representa margem aprovada nem critério oficial da CAIXA.
+                    </p>
+                  )}
                 </div>
               );
             })}

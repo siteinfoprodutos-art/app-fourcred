@@ -14,7 +14,59 @@ export interface ProposalFinancialIndicators {
   financingPercent: number;
 }
 
+export interface McmvIncomeClassification {
+  label: string;
+  incomeRange: string;
+  withinUrbanIncomeLimit: boolean;
+}
+
 const roundMoney = (value: number): number => Math.round((value + Number.EPSILON) * 100) / 100;
+
+export const classifyUrbanMcmvIncome = (
+  familyGrossIncome: number
+): McmvIncomeClassification | null => {
+  if (!Number.isFinite(familyGrossIncome) || familyGrossIncome <= 0) return null;
+  if (familyGrossIncome <= 3200) {
+    return {
+      label: 'Faixa 1',
+      incomeRange: 'Até R$ 3.200,00 por mês',
+      withinUrbanIncomeLimit: true,
+    };
+  }
+  if (familyGrossIncome <= 5000) {
+    return {
+      label: 'Faixa 2',
+      incomeRange: 'De R$ 3.200,01 a R$ 5.000,00 por mês',
+      withinUrbanIncomeLimit: true,
+    };
+  }
+  if (familyGrossIncome <= 9600) {
+    return {
+      label: 'Faixa 3',
+      incomeRange: 'De R$ 5.000,01 a R$ 9.600,00 por mês',
+      withinUrbanIncomeLimit: true,
+    };
+  }
+  if (familyGrossIncome <= 13000) {
+    return {
+      label: 'MCMV Classe Média',
+      incomeRange: 'De R$ 9.600,01 a R$ 13.000,00 por mês',
+      withinUrbanIncomeLimit: true,
+    };
+  }
+  return {
+    label: 'Acima do limite de renda urbana informado para o MCMV',
+    incomeRange: 'Acima de R$ 13.000,00 por mês',
+    withinUrbanIncomeLimit: false,
+  };
+};
+
+export const effectiveMonthlyRateFromAnnualPercent = (annualRatePercent: number): number => {
+  if (!Number.isFinite(annualRatePercent) || annualRatePercent < 0) {
+    throw new Error('A taxa anual deve ser um número não negativo.');
+  }
+  return ((1 + annualRatePercent / 100) ** (1 / 12) - 1) * 100;
+};
 
 const toAmount = (value: number | string | undefined): number => {
   const amount = Number(value || 0);

@@ -144,6 +144,43 @@ const getRequestParameters = (body: Record<string, unknown>): {
     termMonths: raw.termMonths as number,
     amortizationSystem: raw.amortizationSystem,
   };
+  if (raw.caixaProgram !== undefined) {
+    if (!['mcmv-fgts', 'mcmv-procotista', 'sbpe-tr', 'outra'].includes(String(raw.caixaProgram))) {
+      return null;
+    }
+    parameters.caixaProgram = raw.caixaProgram as SimulationParameters['caixaProgram'];
+  }
+  if (raw.financingQuotaPercent !== undefined) {
+    if (
+      typeof raw.financingQuotaPercent !== 'number' ||
+      !Number.isFinite(raw.financingQuotaPercent) ||
+      raw.financingQuotaPercent <= 0 ||
+      raw.financingQuotaPercent > 100
+    ) {
+      return null;
+    }
+    parameters.financingQuotaPercent = raw.financingQuotaPercent;
+  }
+  if (raw.maxTermMonths !== undefined) {
+    if (
+      typeof raw.maxTermMonths !== 'number' ||
+      !Number.isSafeInteger(raw.maxTermMonths) ||
+      raw.maxTermMonths <= 0
+    ) {
+      return null;
+    }
+    parameters.maxTermMonths = raw.maxTermMonths;
+  }
+  if (raw.rateInputUnit !== undefined) {
+    if (raw.rateInputUnit !== 'monthly' && raw.rateInputUnit !== 'annual') return null;
+    parameters.rateInputUnit = raw.rateInputUnit;
+  }
+  if (raw.annualRatePercent !== undefined) {
+    if (typeof raw.annualRatePercent !== 'number' || !Number.isFinite(raw.annualRatePercent) || raw.annualRatePercent < 0) {
+      return null;
+    }
+    parameters.annualRatePercent = raw.annualRatePercent;
+  }
   return { scenarioName, parameters };
 };
 

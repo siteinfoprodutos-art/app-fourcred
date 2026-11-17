@@ -82,6 +82,11 @@ export interface SimulationParameters {
   monthlyRatePercent: number;
   termMonths: number;
   amortizationSystem: AmortizationSystem;
+  caixaProgram?: 'mcmv-fgts' | 'mcmv-procotista' | 'sbpe-tr' | 'outra';
+  financingQuotaPercent?: number;
+  maxTermMonths?: number;
+  rateInputUnit?: 'monthly' | 'annual';
+  annualRatePercent?: number;
 }
 
 export interface SimulationInstallment {

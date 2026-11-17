@@ -434,7 +434,17 @@ export const generateSimulationPDF = (
       ['FGTS utilizado', formatCurrency(parameters.fgtsValue)],
       ['Valor financiado', formatCurrency(parameters.financedAmount)],
       ['Taxa mensal informada', `${parameters.monthlyRatePercent.toLocaleString('pt-BR')}%`],
+      ...(parameters.annualRatePercent !== undefined
+        ? [['Taxa efetiva anual consultada', `${parameters.annualRatePercent.toLocaleString('pt-BR')}% a.a.`]]
+        : []),
       ['Prazo', `${parameters.termMonths} meses`],
+      ...(parameters.caixaProgram ? [['Linha CAIXA consultada', parameters.caixaProgram]] : []),
+      ...(parameters.financingQuotaPercent !== undefined
+        ? [['Cota máxima consultada', `${parameters.financingQuotaPercent}%`]]
+        : []),
+      ...(parameters.maxTermMonths !== undefined
+        ? [['Prazo máximo consultado', `${parameters.maxTermMonths} meses`]]
+        : []),
       ['Sistema', parameters.amortizationSystem.toUpperCase()],
       ['Primeira prestação', formatCurrency(result.firstInstallment)],
       ['Última prestação', formatCurrency(result.lastInstallment)],

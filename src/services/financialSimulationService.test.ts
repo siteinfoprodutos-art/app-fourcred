@@ -3,7 +3,12 @@ import { createServer, Server } from 'node:http';
 import { once } from 'node:events';
 import express from 'express';
 import test from 'node:test';
-import { calculateFinancialSimulation, getProposalFinancialIndicators } from './financialSimulationService.ts';
+import {
+  calculateFinancialSimulation,
+  classifyUrbanMcmvIncome,
+  effectiveMonthlyRateFromAnnualPercent,
+  getProposalFinancialIndicators,
+} from './financialSimulationService.ts';
 import simulationRoutes from '../server/routes/simulationRoutes.ts';
 import { ProposalPayload, SimulationParameters } from '../types/proposal.ts';
 
@@ -71,6 +76,22 @@ test('SAC has constant amortization and a declining payment', () => {
   );
 });
 
+test('SAC starts above PRICE and ends below PRICE when interest is positive', () => {
+  const sac = calculateFinancialSimulation({ ...parameters, amortizationSystem: 'sac' });
+  const price = calculateFinancialSimulation({ ...parameters, amortizationSystem: 'price' });
+
+  assert.ok(sac.firstInstallment > price.firstInstallment);
+  assert.ok(sac.lastInstallment < price.lastInstallment);
+  assert.ok(sac.installments[0].payment > sac.installments.at(-1)!.payment);
+  assert.equal(price.firstInstallment, price.lastInstallment);
+});
+
+test('effective annual rate converts to an equivalent monthly rate', () => {
+  const monthlyRate = effectiveMonthlyRateFromAnnualPercent(7.93);
+
+  assert.ok(monthlyRate > 0.63 && monthlyRate < 0.64);
+});
+
 test('zero interest is handled without division by zero', () => {
   const result = calculateFinancialSimulation({
     ...parameters,
@@ -128,6 +149,18 @@ test('family income and commitments include the titular and coproponent', () => 
   });
 });
 
+test('urban MCMV income classification uses the published monthly income bands', () => {
+  assert.equal(classifyUrbanMcmvIncome(3200)?.label, 'Faixa 1');
+  assert.equal(classifyUrbanMcmvIncome(3200.01)?.label, 'Faixa 2');
+  assert.equal(classifyUrbanMcmvIncome(5000)?.label, 'Faixa 2');
+  assert.equal(classifyUrbanMcmvIncome(5000.01)?.label, 'Faixa 3');
+  assert.equal(classifyUrbanMcmvIncome(9600)?.label, 'Faixa 3');
+  assert.equal(classifyUrbanMcmvIncome(9600.01)?.label, 'MCMV Classe Média');
+  assert.equal(classifyUrbanMcmvIncome(13000)?.withinUrbanIncomeLimit, true);
+  assert.equal(classifyUrbanMcmvIncome(13000.01)?.withinUrbanIncomeLimit, false);
+  assert.equal(classifyUrbanMcmvIncome(0), null);
+});
+
 test('multiple simulation scenarios persist independently for one proposal', async () => {
   const keys = [
     'SUPABASE_URL',
@@ -149,7 +182,15 @@ test('multiple simulation scenarios persist independently for one proposal', asy
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           scenarioName: `${amortizationSystem.toUpperCase()} test`,
-          parameters: { ...parameters, amortizationSystem },
+          parameters: {
+            ...parameters,
+            amortizationSystem,
+            caixaProgram: 'mcmv-fgts',
+            financingQuotaPercent: 80,
+            maxTermMonths: 420,
+            rateInputUnit: 'annual',
+            annualRatePercent: 7.93,
+          },
         }),
       });
       assert.equal(response.status, 201);
@@ -165,7 +206,15 @@ test('multiple simulation scenarios persist independently for one proposal', asy
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         scenarioName: 'SAC atualizado',
-        parameters: { ...parameters, monthlyRatePercent: 0.75 },
+        parameters: {
+          ...parameters,
+          monthlyRatePercent: 0.75,
+          caixaProgram: 'mcmv-fgts',
+          financingQuotaPercent: 80,
+          maxTermMonths: 420,
+          rateInputUnit: 'annual',
+          annualRatePercent: 7.93,
+        },
       }),
     });
     assert.equal(updateResponse.status, 200);
@@ -179,6 +228,9 @@ test('multiple simulation scenarios persist independently for one proposal', asy
     const updatedScenario = body.data.find((scenario) => scenario.id === sacSimulationId);
     assert.equal(updatedScenario?.scenarioName, 'SAC atualizado');
     assert.equal(updatedScenario?.parameters.monthlyRatePercent, 0.75);
+    assert.equal(updatedScenario?.parameters.caixaProgram, 'mcmv-fgts');
+    assert.equal(updatedScenario?.parameters.financingQuotaPercent, 80);
+    assert.equal(updatedScenario?.parameters.annualRatePercent, 7.93);
     assert.deepEqual(
       new Set(body.data.map((scenario) => scenario.parameters.amortizationSystem)),
       new Set(['sac', 'price'])
