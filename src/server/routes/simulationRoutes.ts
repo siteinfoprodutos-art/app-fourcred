@@ -172,7 +172,11 @@ const getRequestParameters = (body: Record<string, unknown>): {
     parameters.maxTermMonths = raw.maxTermMonths;
   }
   if (raw.rateInputUnit !== undefined) {
-    if (raw.rateInputUnit !== 'monthly' && raw.rateInputUnit !== 'annual') return null;
+    if (
+      raw.rateInputUnit !== 'monthly' &&
+      raw.rateInputUnit !== 'annual' &&
+      raw.rateInputUnit !== 'nominal-annual'
+    ) return null;
     parameters.rateInputUnit = raw.rateInputUnit;
   }
   if (raw.annualRatePercent !== undefined) {
@@ -180,6 +184,16 @@ const getRequestParameters = (body: Record<string, unknown>): {
       return null;
     }
     parameters.annualRatePercent = raw.annualRatePercent;
+  }
+  if (raw.nominalAnnualRatePercent !== undefined) {
+    if (
+      typeof raw.nominalAnnualRatePercent !== 'number' ||
+      !Number.isFinite(raw.nominalAnnualRatePercent) ||
+      raw.nominalAnnualRatePercent < 0
+    ) {
+      return null;
+    }
+    parameters.nominalAnnualRatePercent = raw.nominalAnnualRatePercent;
   }
   if (raw.propertyValueCeiling !== undefined) {
     if (

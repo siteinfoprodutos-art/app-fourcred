@@ -704,7 +704,9 @@ export const ProposalForm: React.FC = () => {
                     Perfil de Renda e Atividade Profissional (P1)
                   </h2>
                   <p className="text-[13px] text-slate-400 mt-2">
-                    Insira suas informações sobre atividade econômica atual para balizamento de renda.
+                    Insira suas informações sobre atividade econômica atual para balizamento de renda. O tempo
+                    de trabalho sob regime do FGTS será levado para a simulação; se houver coproponente, os períodos
+                    informados serão somados.
                   </p>
                 </div>
 
@@ -722,7 +724,7 @@ export const ProposalForm: React.FC = () => {
                     label="Tempo de trabalho sob regime do FGTS *"
                     name="p1.serviceTime"
                     required
-                    placeholder="Ex: 3 anos e meio"
+                    placeholder="Ex: 3 anos e 6 meses"
                     value={formData.p1.serviceTime}
                     onChange={(e) => handleP1Change('serviceTime', e.target.value)}
                     error={errors['p1.serviceTime']}
@@ -972,7 +974,7 @@ export const ProposalForm: React.FC = () => {
                       label="Tempo de trabalho sob regime do FGTS *"
                       name="p2.serviceTime"
                       required
-                      placeholder="Ex: 2 anos"
+                      placeholder="Ex: 2 anos e 6 meses"
                       containerClassName="md:col-span-2"
                       value={formData.p2?.serviceTime || ''}
                       onChange={(e) => handleP2Change('serviceTime', e.target.value)}

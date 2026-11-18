@@ -2,6 +2,8 @@ import {
   AmortizationSystem,
   ProposalPayload,
   SimulationParameters,
+  SimulationPropertyType,
+  SimulationPurpose,
   SimulationResult,
 } from '../types/proposal';
 
@@ -19,6 +21,55 @@ export interface McmvIncomeClassification {
   incomeRange: string;
   withinUrbanIncomeLimit: boolean;
 }
+
+export interface McmvRateReference {
+  nominalAnnualRatePercent: number;
+  rangeLabel: string;
+}
+
+export interface FinancingQuotaReference {
+  percent: number;
+  note: string;
+}
+
+export const getAvailableCaixaPrograms = (
+  familyIncome: number,
+  fgtsMonths: number | null,
+  propertyType: SimulationPropertyType,
+  purpose: SimulationPurpose | ''
+): NonNullable<SimulationParameters['caixaProgram']>[] => {
+  const programs: NonNullable<SimulationParameters['caixaProgram']>[] = [];
+  const classification = classifyUrbanMcmvIncome(familyIncome);
+  const qualifiesForMcmvPurpose =
+    !purpose ||
+    purpose === 'buy-new' ||
+    purpose === 'buy-used' ||
+    purpose === 'caixa-property';
+  if (
+    propertyType === 'residential' &&
+    qualifiesForMcmvPurpose &&
+    classification &&
+    ['Faixa 1', 'Faixa 2', 'Faixa 3'].includes(classification.label)
+  ) {
+    programs.push('mcmv-fgts');
+  }
+
+  const qualifiesForProCotistaPurpose =
+    purpose === 'buy-new' ||
+    purpose === 'build' ||
+    (!purpose && familyIncome > 0 && familyIncome <= 12000) ||
+    (purpose === 'buy-used' && familyIncome <= 12000);
+  if (
+    propertyType === 'residential' &&
+    (fgtsMonths ?? 0) >= 36 &&
+    qualifiesForProCotistaPurpose
+  ) {
+    programs.push('mcmv-procotista');
+  }
+
+  programs.push('sbpe-tr', 'outra');
+  return programs;
+};
 
 const roundMoney = (value: number): number => Math.round((value + Number.EPSILON) * 100) / 100;
 
@@ -61,6 +112,73 @@ export const classifyUrbanMcmvIncome = (
   };
 };
 
+export const getMcmvRateReference = (
+  familyGrossIncome: number
+): McmvRateReference | null => {
+  const classification = classifyUrbanMcmvIncome(familyGrossIncome);
+  if (!classification) return null;
+  if (classification.label === 'Faixa 1') {
+    return { nominalAnnualRatePercent: 4, rangeLabel: '4,00% a 4,25% a.a.' };
+  }
+  if (classification.label === 'Faixa 2') {
+    return { nominalAnnualRatePercent: 4.75, rangeLabel: '4,75% a 7,00% a.a.' };
+  }
+  if (classification.label === 'Faixa 3') {
+    return { nominalAnnualRatePercent: 7.66, rangeLabel: '7,66% a 8,16% a.a.' };
+  }
+  return null;
+};
+
+export const getAutomaticFinancingQuota = (
+  program: SimulationParameters['caixaProgram'],
+  purpose: SimulationParameters['purpose'],
+  amortizationSystem: AmortizationSystem,
+  propertyType: SimulationParameters['propertyType'] = 'residential'
+): FinancingQuotaReference | null => {
+  if (propertyType !== 'residential') return null;
+  const isUsed = purpose === 'buy-used';
+  const isNewOrConstruction =
+    purpose === 'buy-new' || purpose === 'build' || purpose === 'caixa-property';
+  if (!isUsed && !isNewOrConstruction) return null;
+
+  if (program === 'mcmv-fgts') {
+    if (purpose === 'build') return null;
+    if (amortizationSystem === 'sac') {
+      return {
+        percent: 80,
+        note: isUsed
+          ? 'Tabela enviada: até 80%, podendo haver casos específicos até 90%.'
+          : 'Tabela enviada: até 80%, podendo haver casos específicos até 90%.',
+      };
+    }
+    return {
+      percent: isUsed ? 70 : 80,
+      note: isUsed
+        ? 'Tabela enviada: imóveis usados, entre 70% e 80%; preenchido no limite conservador.'
+        : 'Tabela enviada: até 80%.',
+    };
+  }
+
+  if (program === 'mcmv-procotista') {
+    if (isUsed) {
+      return amortizationSystem === 'sac'
+        ? { percent: 50, note: 'Tabela enviada: até 50% para imóvel usado.' }
+        : { percent: 40, note: 'Tabela enviada: até 40% para imóvel usado.' };
+    }
+    return amortizationSystem === 'sac'
+      ? { percent: 80, note: 'Tabela enviada: até 80% para imóvel novo/construção.' }
+      : { percent: 60, note: 'Tabela enviada: até 60% para imóvel novo/construção.' };
+  }
+
+  if (program === 'sbpe-tr') {
+    return amortizationSystem === 'sac'
+      ? { percent: 80, note: `Tabela enviada: até 80% para imóvel ${isUsed ? 'usado' : 'novo'}.` }
+      : { percent: 70, note: `Tabela enviada: até 70% para imóvel ${isUsed ? 'usado' : 'novo'}.` };
+  }
+
+  return null;
+};
+
 export const parseFgtsServiceTimeMonths = (serviceTime: string): number | null => {
   const normalized = serviceTime.trim().toLowerCase();
   if (!normalized) return null;
@@ -99,6 +217,23 @@ export const effectiveMonthlyRateFromAnnualPercent = (annualRatePercent: number)
     throw new Error('A taxa anual deve ser um número não negativo.');
   }
   return ((1 + annualRatePercent / 100) ** (1 / 12) - 1) * 100;
+};
+
+export const effectiveMonthlyRateFromNominalAnnualPercent = (
+  nominalAnnualRatePercent: number
+): number => {
+  if (!Number.isFinite(nominalAnnualRatePercent) || nominalAnnualRatePercent < 0) {
+    throw new Error('A taxa nominal anual deve ser um número não negativo.');
+  }
+  return nominalAnnualRatePercent / 12;
+};
+
+export const effectiveAnnualRateFromNominalAnnualPercent = (
+  nominalAnnualRatePercent: number
+): number => {
+  const monthlyRatePercent =
+    effectiveMonthlyRateFromNominalAnnualPercent(nominalAnnualRatePercent);
+  return ((1 + monthlyRatePercent / 100) ** 12 - 1) * 100;
 };
 
 const toAmount = (value: number | string | undefined): number => {

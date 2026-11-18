@@ -8,6 +8,7 @@ import {
 } from '../types/proposal';
 import {
   classifyUrbanMcmvIncome,
+  getMcmvRateReference,
   formatFgtsServiceTime,
   getProposalFinancialIndicators,
   parseFgtsServiceTimeMonths,
@@ -421,6 +422,7 @@ export const generateSimulationPDF = (
   const formatDate = (value: string) => new Date(value).toLocaleString('pt-BR');
   const { familyGrossIncome } = getProposalFinancialIndicators(proposal.payload);
   const incomeClassification = classifyUrbanMcmvIncome(familyGrossIncome);
+  const mcmvRateReference = getMcmvRateReference(familyGrossIncome);
   const primaryFgtsMonths = parseFgtsServiceTimeMonths(proposal.payload.p1.serviceTime);
   const coProposerFgtsMonths = proposal.payload.hasP2 && proposal.payload.p2
     ? parseFgtsServiceTimeMonths(proposal.payload.p2.serviceTime)
@@ -465,9 +467,17 @@ export const generateSimulationPDF = (
       ['Entrada', formatCurrency(parameters.downPayment)],
       ['FGTS utilizado', formatCurrency(parameters.fgtsValue)],
       ['Valor financiado', formatCurrency(parameters.financedAmount)],
-      ['Taxa mensal informada', `${parameters.monthlyRatePercent.toLocaleString('pt-BR')}%`],
+      ['Taxa mensal efetiva utilizada', `${parameters.monthlyRatePercent.toLocaleString('pt-BR')}%`],
       ...(parameters.annualRatePercent !== undefined
-        ? [['Taxa efetiva anual consultada', `${parameters.annualRatePercent.toLocaleString('pt-BR')}% a.a.`]]
+        ? [[
+            parameters.nominalAnnualRatePercent !== undefined
+              ? 'Taxa efetiva anual equivalente'
+              : 'Taxa efetiva anual consultada',
+            `${parameters.annualRatePercent.toLocaleString('pt-BR')}% a.a.`,
+          ]]
+        : []),
+      ...(parameters.nominalAnnualRatePercent !== undefined
+        ? [['Taxa nominal anual de referência', `${parameters.nominalAnnualRatePercent.toLocaleString('pt-BR')}% a.a.`]]
         : []),
       ['Renda bruta familiar', formatCurrency(familyGrossIncome)],
       ...(incomeClassification
@@ -475,6 +485,12 @@ export const generateSimulationPDF = (
         : []),
       ['Prazo', `${parameters.termMonths} meses`],
       ...(parameters.caixaProgram ? [['Linha CAIXA consultada', caixaPrograms[parameters.caixaProgram]]] : []),
+      ...(parameters.caixaProgram === 'mcmv-fgts' && mcmvRateReference
+        ? [['Intervalo nominal de referência', mcmvRateReference.rangeLabel]]
+        : []),
+      ...(parameters.caixaProgram === 'mcmv-procotista'
+        ? [['Taxa nominal de referência', '8,66% a.a. + TR']]
+        : []),
       ...(parameters.financingQuotaPercent !== undefined
         ? [['Cota máxima consultada', `${parameters.financingQuotaPercent}%`]]
         : []),

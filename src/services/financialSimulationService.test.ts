@@ -6,8 +6,13 @@ import test from 'node:test';
 import {
   calculateFinancialSimulation,
   classifyUrbanMcmvIncome,
+  effectiveAnnualRateFromNominalAnnualPercent,
   effectiveMonthlyRateFromAnnualPercent,
+  effectiveMonthlyRateFromNominalAnnualPercent,
   formatFgtsServiceTime,
+  getAutomaticFinancingQuota,
+  getAvailableCaixaPrograms,
+  getMcmvRateReference,
   getProposalFinancialIndicators,
   parseFgtsServiceTimeMonths,
 } from './financialSimulationService.ts';
@@ -92,6 +97,42 @@ test('effective annual rate converts to an equivalent monthly rate', () => {
   const monthlyRate = effectiveMonthlyRateFromAnnualPercent(7.93);
 
   assert.ok(monthlyRate > 0.63 && monthlyRate < 0.64);
+});
+
+test('nominal annual reference converts to monthly rate and effective annual rate', () => {
+  assert.equal(effectiveMonthlyRateFromNominalAnnualPercent(7.66), 7.66 / 12);
+  assert.ok(effectiveAnnualRateFromNominalAnnualPercent(7.66) > 7.9);
+  assert.equal(getMcmvRateReference(3200)?.nominalAnnualRatePercent, 4);
+  assert.equal(getMcmvRateReference(3200.01)?.rangeLabel, '4,75% a 7,00% a.a.');
+  assert.equal(getMcmvRateReference(5000.01)?.nominalAnnualRatePercent, 7.66);
+  assert.equal(getMcmvRateReference(9600.01), null);
+});
+
+test('automatic quota follows program, property usage, and amortization table', () => {
+  assert.equal(getAutomaticFinancingQuota('mcmv-fgts', 'buy-new', 'sac')?.percent, 80);
+  assert.equal(getAutomaticFinancingQuota('mcmv-fgts', 'buy-used', 'price')?.percent, 70);
+  assert.equal(getAutomaticFinancingQuota('mcmv-procotista', 'buy-used', 'sac')?.percent, 50);
+  assert.equal(getAutomaticFinancingQuota('mcmv-procotista', 'buy-new', 'price')?.percent, 60);
+  assert.equal(getAutomaticFinancingQuota('sbpe-tr', 'buy-used', 'price')?.percent, 70);
+  assert.equal(getAutomaticFinancingQuota('mcmv-fgts', 'build', 'sac'), null);
+});
+
+test('available Caixa programs follow income and FGTS eligibility', () => {
+  const faixa3 = getAvailableCaixaPrograms(9600, 35, 'residential', 'buy-used');
+  const faixa4 = getAvailableCaixaPrograms(9600.01, 35, 'residential', 'buy-used');
+  const proCotistaEligible = getAvailableCaixaPrograms(11000, 36, 'residential', 'buy-used');
+
+  assert.ok(faixa3.includes('mcmv-fgts'));
+  assert.ok(!faixa4.includes('mcmv-fgts'));
+  assert.ok(!faixa3.includes('mcmv-procotista'));
+  assert.ok(proCotistaEligible.includes('mcmv-procotista'));
+  assert.ok(proCotistaEligible.includes('sbpe-tr'));
+  assert.ok(
+    !getAvailableCaixaPrograms(5000, 60, 'residential', 'buy-land').includes('mcmv-fgts')
+  );
+  assert.ok(
+    !getAvailableCaixaPrograms(5000, 60, 'commercial', 'buy-new').includes('mcmv-fgts')
+  );
 });
 
 test('zero interest is handled without division by zero', () => {
@@ -205,8 +246,10 @@ test('multiple simulation scenarios persist independently for one proposal', asy
             caixaProgram: 'mcmv-fgts',
             financingQuotaPercent: 80,
             maxTermMonths: 420,
-            rateInputUnit: 'annual',
-            annualRatePercent: 7.93,
+            rateInputUnit: 'nominal-annual',
+            nominalAnnualRatePercent: 4.75,
+            annualRatePercent: effectiveAnnualRateFromNominalAnnualPercent(4.75),
+            monthlyRatePercent: effectiveMonthlyRateFromNominalAnnualPercent(4.75),
             propertyValueCeiling: 600000,
             propertyType: 'residential',
             purpose: 'buy-used',
@@ -279,6 +322,9 @@ test('multiple simulation scenarios persist independently for one proposal', asy
       new Set(body.data.map((scenario) => scenario.parameters.amortizationSystem)),
       new Set(['sac', 'price'])
     );
+    const priceScenario = body.data.find((scenario) => scenario.parameters.amortizationSystem === 'price');
+    assert.equal(priceScenario?.parameters.rateInputUnit, 'nominal-annual');
+    assert.equal(priceScenario?.parameters.nominalAnnualRatePercent, 4.75);
   } finally {
     await stopServer(server);
     restoreEnvironment(original);

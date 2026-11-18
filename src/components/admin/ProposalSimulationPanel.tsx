@@ -11,8 +11,13 @@ import {
 import {
   calculateFinancialSimulation,
   classifyUrbanMcmvIncome,
+  effectiveAnnualRateFromNominalAnnualPercent,
   effectiveMonthlyRateFromAnnualPercent,
+  effectiveMonthlyRateFromNominalAnnualPercent,
   formatFgtsServiceTime,
+  getAutomaticFinancingQuota,
+  getAvailableCaixaPrograms,
+  getMcmvRateReference,
   getProposalFinancialIndicators,
   parseFgtsServiceTimeMonths,
 } from '../../services/financialSimulationService';
@@ -41,11 +46,26 @@ type CurrencyInputField =
   | 'fgtsValue'
   | 'financedAmount';
 type YesNoAnswer = '' | 'sim' | 'nao';
+type CaixaProgram = NonNullable<SimulationParameters['caixaProgram']>;
+type RateInputUnit = NonNullable<SimulationParameters['rateInputUnit']>;
 
 const BRAZILIAN_STATES = [
   'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS', 'MG',
   'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO',
 ];
+
+interface IbgeMunicipality {
+  id: number;
+  nome: string;
+}
+
+const isIbgeMunicipality = (value: unknown): value is IbgeMunicipality =>
+  typeof value === 'object' &&
+  value !== null &&
+  'id' in value &&
+  typeof value.id === 'number' &&
+  'nome' in value &&
+  typeof value.nome === 'string';
 
 const PURPOSE_LABELS: Record<SimulationPurpose, string> = {
   'buy-new': 'Comprar imóvel novo',
@@ -59,11 +79,11 @@ const PURPOSE_LABELS: Record<SimulationPurpose, string> = {
 };
 
 const CAIXA_PROGRAM_LABELS: Record<
-  NonNullable<SimulationParameters['caixaProgram']>,
+  CaixaProgram,
   string
 > = {
-  'mcmv-fgts': 'Minha Casa, Minha Vida — Recursos FGTS',
-  'mcmv-procotista': 'Minha Casa, Minha Vida / Pró-Cotista',
+  'mcmv-fgts': 'Minha Casa, Minha Vida — Recursos FGTS (Faixas 1, 2 e 3)',
+  'mcmv-procotista': 'Pró-Cotista — Recursos FGTS',
   'sbpe-tr': 'SBPE — TR',
   outra: 'Outra modalidade/condição consultada',
 };
@@ -112,8 +132,10 @@ const inputValuesFromParameters = (
   downPayment: formatCurrencyInput(parameters.downPayment),
   fgtsValue: formatCurrencyInput(parameters.fgtsValue),
   financedAmount: formatCurrencyInput(parameters.financedAmount),
-  monthlyRatePercent:
-    parameters.annualRatePercent !== undefined
+  monthlyRatePercent: parameters.rateInputUnit === 'nominal-annual' &&
+  parameters.nominalAnnualRatePercent !== undefined
+      ? String(parameters.nominalAnnualRatePercent)
+      : parameters.annualRatePercent !== undefined
       ? String(parameters.annualRatePercent)
       : Number.isFinite(parameters.monthlyRatePercent)
         ? String(parameters.monthlyRatePercent)
@@ -174,7 +196,14 @@ const ResultSummary: React.FC<{
       <div className="col-span-full border-b border-[#334155] pb-1 pt-2 font-extrabold uppercase tracking-wider text-[#CBD5E1]/60">Taxas de juros</div>
       <div><span className="block text-[#CBD5E1]/50">Taxa mensal efetiva</span><b>{parameters.monthlyRatePercent.toLocaleString('pt-BR')}%</b></div>
       {parameters.annualRatePercent !== undefined && (
-        <div><span className="block text-[#CBD5E1]/50">Juros efetivos consultados</span><b>{parameters.annualRatePercent.toLocaleString('pt-BR')}% a.a.</b></div>
+        <div><span className="block text-[#CBD5E1]/50">
+          {parameters.nominalAnnualRatePercent !== undefined
+            ? 'Taxa efetiva anual equivalente'
+            : 'Juros efetivos consultados'}
+        </span><b>{parameters.annualRatePercent.toLocaleString('pt-BR')}% a.a.</b></div>
+      )}
+      {parameters.nominalAnnualRatePercent !== undefined && (
+        <div><span className="block text-[#CBD5E1]/50">Taxa nominal de referência</span><b>{parameters.nominalAnnualRatePercent.toLocaleString('pt-BR')}% a.a.</b></div>
       )}
       <div className="col-span-full border-b border-[#334155] pb-1 pt-2 font-extrabold uppercase tracking-wider text-[#CBD5E1]/60">Prazos e parcelas</div>
       <div><span className="block text-[#CBD5E1]/50">Prazo</span><b>{parameters.termMonths} meses</b></div>
@@ -189,6 +218,12 @@ const ResultSummary: React.FC<{
       )}
       {parameters.caixaProgram && (
         <div><span className="block text-[#CBD5E1]/50">Modalidade selecionada</span><b>{CAIXA_PROGRAM_LABELS[parameters.caixaProgram]}</b></div>
+      )}
+      {parameters.caixaProgram === 'mcmv-fgts' && getMcmvRateReference(familyGrossIncome) && (
+        <div><span className="block text-[#CBD5E1]/50">Intervalo nominal de referência</span><b>{getMcmvRateReference(familyGrossIncome)?.rangeLabel}</b></div>
+      )}
+      {parameters.caixaProgram === 'mcmv-procotista' && (
+        <div><span className="block text-[#CBD5E1]/50">Taxa nominal de referência</span><b>8,66% a.a. + TR</b></div>
       )}
       {parameters.financingQuotaPercent !== undefined && (
         <div><span className="block text-[#CBD5E1]/50">Cota informada</span><b>{parameters.financingQuotaPercent}%</b></div>
@@ -271,11 +306,15 @@ export const ProposalSimulationPanel: React.FC<{
   onCancelEdit: () => void;
 }> = ({ proposal, editingSimulation, onSaved, onCancelEdit }) => {
   const [termUnit, setTermUnit] = useState<'months' | 'years'>('years');
-  const [rateInputUnit, setRateInputUnit] = useState<'monthly' | 'annual'>('annual');
+  const [rateInputUnit, setRateInputUnit] = useState<RateInputUnit>('annual');
   const [propertyType, setPropertyType] = useState<SimulationPropertyType>('residential');
   const [purpose, setPurpose] = useState<SimulationPurpose | ''>('');
   const [municipality, setMunicipality] = useState('');
   const [state, setState] = useState('');
+  const [municipalities, setMunicipalities] = useState<IbgeMunicipality[]>([]);
+  const [municipalitiesLoading, setMunicipalitiesLoading] = useState(false);
+  const [municipalitiesError, setMunicipalitiesError] = useState<string | null>(null);
+  const [municipalitiesRetry, setMunicipalitiesRetry] = useState(0);
   const [hasPropertyInSameMunicipality, setHasPropertyInSameMunicipality] =
     useState<YesNoAnswer>('');
   const [hasActiveHousingFinance, setHasActiveHousingFinance] = useState<YesNoAnswer>('');
@@ -309,6 +348,55 @@ export const ProposalSimulationPanel: React.FC<{
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!state) {
+      setMunicipalities([]);
+      setMunicipalitiesError(null);
+      setMunicipalitiesLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    const loadMunicipalities = async () => {
+      setMunicipalities([]);
+      setMunicipalitiesLoading(true);
+      setMunicipalitiesError(null);
+
+      try {
+        const response = await fetch(
+          `https://servicodados.ibge.gov.br/api/v1/localidades/estados/${state}/municipios?orderBy=nome`,
+          { signal: controller.signal }
+        );
+        if (!response.ok) {
+          throw new Error(`IBGE respondeu com status ${response.status}.`);
+        }
+
+        const data: unknown = await response.json();
+        if (!Array.isArray(data)) {
+          throw new Error('A resposta do IBGE não contém uma lista de municípios.');
+        }
+
+        setMunicipalities(
+          data.filter(isIbgeMunicipality).sort((first, second) =>
+            first.nome.localeCompare(second.nome, 'pt-BR')
+          )
+        );
+      } catch (error) {
+        if (controller.signal.aborted) return;
+        setMunicipalitiesError(
+          error instanceof Error
+            ? `Não foi possível carregar os municípios do IBGE. ${error.message}`
+            : 'Não foi possível carregar os municípios do IBGE.'
+        );
+      } finally {
+        if (!controller.signal.aborted) setMunicipalitiesLoading(false);
+      }
+    };
+
+    void loadMunicipalities();
+    return () => controller.abort();
+  }, [state, municipalitiesRetry]);
+
+  useEffect(() => {
     if (!editingSimulation) return;
     const unit = editingSimulation.parameters.termMonths % 12 === 0 ? 'years' : 'months';
     setTermUnit(unit);
@@ -316,7 +404,10 @@ export const ProposalSimulationPanel: React.FC<{
     setAmortizationSystem(editingSimulation.parameters.amortizationSystem);
     setScenarioName(editingSimulation.scenarioName);
     setFinancedAmountManual(true);
-    setRateInputUnit(editingSimulation.parameters.rateInputUnit || 'monthly');
+    setRateInputUnit(
+      editingSimulation.parameters.rateInputUnit ||
+      (editingSimulation.parameters.annualRatePercent !== undefined ? 'annual' : 'monthly')
+    );
     setPropertyType(editingSimulation.parameters.propertyType || 'residential');
     setPurpose(editingSimulation.parameters.purpose || '');
     setMunicipality(editingSimulation.parameters.municipality || '');
@@ -341,8 +432,30 @@ export const ProposalSimulationPanel: React.FC<{
         ? proposal.payload.fgtsSubsidy === 'sim' ? 'sim' : proposal.payload.fgtsSubsidy === 'nao' ? 'nao' : ''
         : editingSimulation.parameters.receivedSubsidySinceMay2005 ? 'sim' : 'nao'
     );
-    setCaixaProgram(editingSimulation.parameters.caixaProgram || '');
+    const savedProgram = editingSimulation.parameters.caixaProgram || '';
+    const editingIncome = getProposalFinancialIndicators(proposal.payload).familyGrossIncome;
+    const editingPrimaryFgtsMonths = parseFgtsServiceTimeMonths(proposal.payload.p1.serviceTime);
+    const editingCoProposerMonths =
+      proposal.payload.hasP2 && proposal.payload.p2
+        ? parseFgtsServiceTimeMonths(proposal.payload.p2.serviceTime)
+        : 0;
+    const editingTotalFgtsMonths =
+      editingPrimaryFgtsMonths !== null && editingCoProposerMonths !== null
+        ? editingPrimaryFgtsMonths + editingCoProposerMonths
+        : null;
+    const savedPropertyType = editingSimulation.parameters.propertyType || 'residential';
+    const savedPurpose = editingSimulation.parameters.purpose || '';
+    const availablePrograms = getAvailableCaixaPrograms(
+      editingIncome,
+      editingTotalFgtsMonths,
+      savedPropertyType,
+      savedPurpose
+    );
+    setCaixaProgram(
+      savedProgram && availablePrograms.includes(savedProgram) ? savedProgram : ''
+    );
     setCaixaFinancingCapInput(
+      !savedProgram || !availablePrograms.includes(savedProgram) ||
       editingSimulation.parameters.financingQuotaPercent === undefined
         ? ''
         : String(editingSimulation.parameters.financingQuotaPercent)
@@ -359,7 +472,7 @@ export const ProposalSimulationPanel: React.FC<{
     );
     setErrorMessage(null);
     setSuccessMessage(null);
-  }, [editingSimulation]);
+  }, [editingSimulation, proposal]);
 
   const parameters = useMemo<SimulationParameters>(
     () => ({
@@ -370,9 +483,13 @@ export const ProposalSimulationPanel: React.FC<{
       monthlyRatePercent: (() => {
         const enteredRatePercent = parseInputValue(inputValues.monthlyRatePercent);
         if (!Number.isFinite(enteredRatePercent)) return Number.NaN;
-        return rateInputUnit === 'annual'
-          ? effectiveMonthlyRateFromAnnualPercent(enteredRatePercent)
-          : enteredRatePercent;
+        if (rateInputUnit === 'annual') {
+          return effectiveMonthlyRateFromAnnualPercent(enteredRatePercent);
+        }
+        if (rateInputUnit === 'nominal-annual') {
+          return effectiveMonthlyRateFromNominalAnnualPercent(enteredRatePercent);
+        }
+        return enteredRatePercent;
       })(),
       termMonths:
         parseInputValue(inputValues.termValue) * (termUnit === 'years' ? 12 : 1),
@@ -394,8 +511,18 @@ export const ProposalSimulationPanel: React.FC<{
       ...(receivedSubsidySinceMay2005
         ? { receivedSubsidySinceMay2005: receivedSubsidySinceMay2005 === 'sim' }
         : {}),
-      ...(rateInputUnit === 'annual' && Number.isFinite(parseInputValue(inputValues.monthlyRatePercent))
+      ...(Number.isFinite(parseInputValue(inputValues.monthlyRatePercent)) &&
+      rateInputUnit === 'annual'
         ? { annualRatePercent: parseInputValue(inputValues.monthlyRatePercent) }
+        : {}),
+      ...(Number.isFinite(parseInputValue(inputValues.monthlyRatePercent)) &&
+      rateInputUnit === 'nominal-annual'
+        ? {
+            nominalAnnualRatePercent: parseInputValue(inputValues.monthlyRatePercent),
+            annualRatePercent: effectiveAnnualRateFromNominalAnnualPercent(
+              parseInputValue(inputValues.monthlyRatePercent)
+            ),
+          }
         : {}),
       ...(caixaProgram ? { caixaProgram } : {}),
       ...(parseInputValue(caixaFinancingCapInput) > 0
@@ -486,8 +613,21 @@ export const ProposalSimulationPanel: React.FC<{
     primaryFgtsMonths !== null && coProposerFgtsMonths !== null
       ? primaryFgtsMonths + coProposerFgtsMonths
       : null;
+  const availableCaixaPrograms = getAvailableCaixaPrograms(
+    familyIncome,
+    totalFgtsMonths,
+    propertyType,
+    purpose
+  );
+  const quotaReference = getAutomaticFinancingQuota(
+    caixaProgram || undefined,
+    purpose || undefined,
+    amortizationSystem,
+    propertyType
+  );
   const possibleMcmvFinancingLine =
-    mcmvIncomeClassification?.withinUrbanIncomeLimit &&
+    mcmvIncomeClassification &&
+    ['Faixa 1', 'Faixa 2', 'Faixa 3'].includes(mcmvIncomeClassification.label) &&
     propertyType === 'residential' &&
     ['buy-new', 'buy-used', 'caixa-property'].includes(purpose);
   const mcmvRequirementReviewNeeded =
@@ -556,6 +696,122 @@ export const ProposalSimulationPanel: React.FC<{
     setSuccessMessage(null);
   };
 
+  const applyAutomaticQuota = (
+    program: CaixaProgram,
+    nextPurpose: SimulationPurpose | '',
+    system: SimulationParameters['amortizationSystem'],
+    type: SimulationPropertyType
+  ) => {
+    const reference = getAutomaticFinancingQuota(program, nextPurpose || undefined, system, type);
+    setCaixaFinancingCapInput(reference ? String(reference.percent) : '');
+    setFinancedAmountManual(false);
+    if (reference) {
+      setInputValues((previous) => {
+        const propertyValue = parseCurrencyInput(previous.propertyValue);
+        const downPayment = parseCurrencyInput(previous.downPayment);
+        const fgtsValue = parseCurrencyInput(previous.fgtsValue);
+        if (![propertyValue, downPayment, fgtsValue].every(Number.isFinite)) return previous;
+        const amountNeeded = propertyValue - downPayment - fgtsValue;
+        const quotaLimit = propertyValue * (reference.percent / 100);
+        return {
+          ...previous,
+          financedAmount: formatCurrencyInput(Math.max(0, Math.min(amountNeeded, quotaLimit))),
+        };
+      });
+    }
+  };
+
+  const handleCaixaProgramChange = (program: CaixaProgram | '') => {
+    setCaixaProgram(program);
+    if (program) {
+      applyAutomaticQuota(program, purpose, amortizationSystem, propertyType);
+    } else {
+      setCaixaFinancingCapInput('');
+      setFinancedAmountManual(false);
+    }
+
+    const mcmvRate = program === 'mcmv-fgts'
+      ? getMcmvRateReference(familyIncome)
+      : null;
+    const rateReference = mcmvRate
+      ? {
+          nominalAnnualRatePercent: mcmvRate.nominalAnnualRatePercent,
+          rangeLabel: mcmvRate.rangeLabel,
+          note: 'Taxa nominal de referência da tabela enviada.',
+        }
+      : program === 'mcmv-procotista'
+        ? {
+            nominalAnnualRatePercent: 8.66,
+            rangeLabel: '8,66% a.a. nominal + TR',
+            note: 'Referência da tabela enviada; a TR não está incluída no cálculo.',
+          }
+        : null;
+
+    if (rateReference) {
+      setRateInputUnit('nominal-annual');
+      setInputValues((previous) => ({
+        ...previous,
+        monthlyRatePercent: String(rateReference.nominalAnnualRatePercent),
+      }));
+      setErrorMessage(null);
+      setSuccessMessage(null);
+    } else if (rateInputUnit === 'nominal-annual') {
+      setRateInputUnit('annual');
+      setInputValues((previous) => ({ ...previous, monthlyRatePercent: '' }));
+    }
+  };
+
+  const updatePropertyType = (type: SimulationPropertyType) => {
+    setPropertyType(type);
+    const programs = getAvailableCaixaPrograms(familyIncome, totalFgtsMonths, type, purpose);
+    if (caixaProgram && !programs.includes(caixaProgram)) {
+      handleCaixaProgramChange('');
+    } else if (caixaProgram) {
+      applyAutomaticQuota(caixaProgram, purpose, amortizationSystem, type);
+    }
+  };
+
+  const updatePurpose = (nextPurpose: SimulationPurpose | '') => {
+    setPurpose(nextPurpose);
+    const programs = getAvailableCaixaPrograms(
+      familyIncome,
+      totalFgtsMonths,
+      propertyType,
+      nextPurpose
+    );
+    if (caixaProgram && !programs.includes(caixaProgram)) {
+      handleCaixaProgramChange('');
+    } else if (caixaProgram) {
+      applyAutomaticQuota(caixaProgram, nextPurpose, amortizationSystem, propertyType);
+    }
+  };
+
+  const updateRateInputUnit = (unit: RateInputUnit) => {
+    if (unit === rateInputUnit) return;
+    const enteredRatePercent = parseInputValue(inputValues.monthlyRatePercent);
+    if (Number.isFinite(enteredRatePercent)) {
+      const effectiveMonthlyPercent =
+        rateInputUnit === 'annual'
+          ? effectiveMonthlyRateFromAnnualPercent(enteredRatePercent)
+          : rateInputUnit === 'nominal-annual'
+            ? effectiveMonthlyRateFromNominalAnnualPercent(enteredRatePercent)
+            : enteredRatePercent;
+      const convertedRate =
+        unit === 'monthly'
+          ? effectiveMonthlyPercent
+          : unit === 'nominal-annual'
+            ? effectiveMonthlyPercent * 12
+            : ((1 + effectiveMonthlyPercent / 100) ** 12 - 1) * 100;
+      setInputValues((previous) => ({
+        ...previous,
+        monthlyRatePercent: String(convertedRate),
+      }));
+    }
+    setRateInputUnit(unit);
+    setErrorMessage(null);
+    setSuccessMessage(null);
+  };
+
   const updateTermUnit = (unit: 'months' | 'years') => {
     if (unit !== termUnit) {
       const currentValue = parseInputValue(inputValues.termValue);
@@ -569,26 +825,9 @@ export const ProposalSimulationPanel: React.FC<{
     }
   };
 
-  const updateRateInputUnit = (unit: 'monthly' | 'annual') => {
-    if (unit === rateInputUnit) return;
-    const enteredRatePercent = parseInputValue(inputValues.monthlyRatePercent);
-    if (Number.isFinite(enteredRatePercent)) {
-      const convertedRate =
-        unit === 'monthly'
-          ? effectiveMonthlyRateFromAnnualPercent(enteredRatePercent)
-          : ((1 + enteredRatePercent / 100) ** 12 - 1) * 100;
-      setInputValues((previous) => ({
-        ...previous,
-        monthlyRatePercent: String(convertedRate),
-      }));
-    }
-    setRateInputUnit(unit);
-    setErrorMessage(null);
-    setSuccessMessage(null);
-  };
-
   const updateAmortizationSystem = (system: SimulationParameters['amortizationSystem']) => {
     setAmortizationSystem(system);
+    if (caixaProgram) applyAutomaticQuota(caixaProgram, purpose, system, propertyType);
     setErrorMessage(null);
     setSuccessMessage(null);
   };
@@ -658,7 +897,7 @@ export const ProposalSimulationPanel: React.FC<{
             Tipo do imóvel
             <select
               value={propertyType}
-              onChange={(event) => setPropertyType(event.target.value as SimulationPropertyType)}
+              onChange={(event) => updatePropertyType(event.target.value as SimulationPropertyType)}
               className="mt-1 w-full rounded-lg border border-[#334155] bg-[#0F172A] px-3 py-2 text-sm text-white outline-none focus:border-[#FF6B1A]"
             >
               <option value="residential">Residencial</option>
@@ -669,7 +908,7 @@ export const ProposalSimulationPanel: React.FC<{
             O que deseja fazer?
             <select
               value={purpose}
-              onChange={(event) => setPurpose(event.target.value as SimulationPurpose | '')}
+              onChange={(event) => updatePurpose(event.target.value as SimulationPurpose | '')}
               className="mt-1 w-full rounded-lg border border-[#334155] bg-[#0F172A] px-3 py-2 text-sm text-white outline-none focus:border-[#FF6B1A]"
             >
               <option value="">Selecione</option>
@@ -679,26 +918,53 @@ export const ProposalSimulationPanel: React.FC<{
             </select>
           </label>
           <label className="text-xs text-[#CBD5E1]/70">
-            Município do imóvel
-            <input
-              type="text"
-              maxLength={100}
-              value={municipality}
-              onChange={(event) => setMunicipality(event.target.value)}
-              placeholder="Ex.: Campinas"
-              className="mt-1 w-full rounded-lg border border-[#334155] bg-[#0F172A] px-3 py-2 text-sm text-white outline-none focus:border-[#FF6B1A]"
-            />
-          </label>
-          <label className="text-xs text-[#CBD5E1]/70">
             UF do imóvel
             <select
               value={state}
-              onChange={(event) => setState(event.target.value)}
+              onChange={(event) => {
+                setState(event.target.value);
+                setMunicipality('');
+              }}
               className="mt-1 w-full rounded-lg border border-[#334155] bg-[#0F172A] px-3 py-2 text-sm text-white outline-none focus:border-[#FF6B1A]"
             >
               <option value="">Selecione</option>
               {BRAZILIAN_STATES.map((uf) => <option key={uf} value={uf}>{uf}</option>)}
             </select>
+          </label>
+          <label className="text-xs text-[#CBD5E1]/70">
+            Município do imóvel
+            <select
+              value={municipality}
+              disabled={!state || municipalitiesLoading}
+              onChange={(event) => setMunicipality(event.target.value)}
+              className="mt-1 w-full rounded-lg border border-[#334155] bg-[#0F172A] px-3 py-2 text-sm text-white outline-none focus:border-[#FF6B1A] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <option value="">
+                {!state
+                  ? 'Selecione primeiro a UF'
+                  : municipalitiesLoading
+                    ? 'Carregando municípios...'
+                    : 'Selecione o município'}
+              </option>
+              {municipality && !municipalities.some((item) => item.nome === municipality) && (
+                <option value={municipality}>{municipality} (selecionado anteriormente)</option>
+              )}
+              {municipalities.map((item) => (
+                <option key={item.id} value={item.nome}>{item.nome}</option>
+              ))}
+            </select>
+            {municipalitiesError && (
+              <span role="alert" className="mt-1 block text-[10px] text-amber-200">
+                {municipalitiesError}{' '}
+                <button
+                  type="button"
+                  onClick={() => setMunicipalitiesRetry((attempt) => attempt + 1)}
+                  className="font-bold underline"
+                >
+                  Tentar novamente
+                </button>
+              </span>
+            )}
           </label>
           <label className="text-xs text-[#CBD5E1]/70">
             Possui outro imóvel residencial no município onde pretende comprar?
@@ -743,13 +1009,13 @@ export const ProposalSimulationPanel: React.FC<{
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="rounded-lg border border-[#334155] bg-[#0B1220] p-3 text-xs">
-            <span className="block text-[#CBD5E1]/60">Tempo de trabalho sob regime do FGTS informado</span>
+            <span className="block font-bold text-[#FFB27F]">Tempo de FGTS trazido do formulário do cliente</span>
             <span className="mt-1 block text-white">
-              Titular: {proposal.payload.p1.serviceTime || 'não informado'}
+              Titular: {proposal.payload.p1.serviceTime || 'não informado no formulário'}
             </span>
             {proposal.payload.hasP2 && (
               <span className="mt-1 block text-white">
-                Coproponente: {proposal.payload.p2?.serviceTime || 'não informado'}
+                Coproponente: {proposal.payload.p2?.serviceTime || 'não informado no formulário'}
               </span>
             )}
             <strong className="mt-2 block text-[#FFB27F]">
@@ -879,15 +1145,20 @@ export const ProposalSimulationPanel: React.FC<{
           Programa CAIXA consultado
           <select
             value={caixaProgram}
-            onChange={(event) => setCaixaProgram(event.target.value as typeof caixaProgram)}
+            onChange={(event) => handleCaixaProgramChange(event.target.value as CaixaProgram | '')}
             className="mt-1 w-full rounded-lg border border-[#334155] bg-[#0F172A] px-3 py-2 text-sm text-white outline-none focus:border-[#FF6B1A]"
           >
             <option value="">Selecione conforme a consulta</option>
-            <option value="mcmv-fgts">Minha Casa, Minha Vida - Recursos FGTS</option>
-            <option value="mcmv-procotista">Minha Casa, Minha Vida/Pró-Cotista</option>
-            <option value="sbpe-tr">SBPE (TR): Taxa Balcão</option>
-            <option value="outra">Outra modalidade/condição consultada</option>
+            {availableCaixaPrograms.map((program) => (
+              <option key={program} value={program}>
+                {CAIXA_PROGRAM_LABELS[program]}
+              </option>
+            ))}
           </select>
+          <span className="mt-1 block text-[10px] text-[#CBD5E1]/60">
+            MCMV — Recursos FGTS aparece somente até a Faixa 3 (renda familiar até R$ 9.600). Pró-Cotista exige
+            3 anos sob regime do FGTS e observa limite de renda para imóvel usado.
+          </span>
         </label>
         <label className="text-xs text-[#CBD5E1]/70">
           Cota máxima do financiamento consultada (%)
@@ -901,7 +1172,8 @@ export const ProposalSimulationPanel: React.FC<{
             className="mt-1 w-full rounded-lg border border-[#334155] bg-[#0F172A] px-3 py-2 text-sm text-white outline-none focus:border-[#FF6B1A]"
           />
           <span className="mt-1 block text-[10px] text-[#CBD5E1]/60">
-            Informe a cota mostrada pelo simulador CAIXA para esta proposta. Não há percentual presumido.
+            {quotaReference?.note ||
+              'A cota é preenchida automaticamente quando a tabela enviada cobre modalidade, tipo e finalidade selecionados; confirme a condição CAIXA.'}
           </span>
         </label>
         <label className="text-xs text-[#CBD5E1]/70">
@@ -936,7 +1208,9 @@ export const ProposalSimulationPanel: React.FC<{
             Taxas de Juros, Prazos e Condições
           </div>
           <label className="text-xs text-[#CBD5E1]/70">
-            Taxa de juros efetiva ({rateInputUnit === 'annual' ? '% a.a.' : '% a.m.'})
+            {rateInputUnit === 'nominal-annual'
+              ? 'Taxa nominal de juros (% a.a.)'
+              : `Taxa de juros efetiva (${rateInputUnit === 'annual' ? '% a.a.' : '% a.m.'})`}
             <input type="number" min="0" step="0.0001" value={inputValues.monthlyRatePercent}
               onChange={(event) => updateAmount('monthlyRatePercent', event.target.value)}
               className="mt-1 w-full rounded-lg border border-[#334155] bg-[#0F172A] px-3 py-2 text-sm text-white outline-none focus:border-[#FF6B1A]" />
@@ -945,19 +1219,33 @@ export const ProposalSimulationPanel: React.FC<{
             Unidade
             <select
               value={rateInputUnit}
-              onChange={(event) => updateRateInputUnit(event.target.value as 'monthly' | 'annual')}
+              onChange={(event) => updateRateInputUnit(event.target.value as RateInputUnit)}
               className="mt-1 h-[38px] rounded-lg border border-[#334155] bg-[#0F172A] px-2 text-xs text-white"
             >
-              <option value="annual">% a.a.</option>
-              <option value="monthly">% a.m.</option>
+              <option value="annual">% a.a. efetiva</option>
+              <option value="nominal-annual">% a.a. nominal</option>
+              <option value="monthly">% a.m. efetiva</option>
             </select>
           </label>
           <span className="col-span-2 text-[10px] text-amber-200/80">
             Informe a taxa efetiva da condição CAIXA. A taxa anual é convertida em equivalente mensal para o cálculo.
           </span>
           <span className="mt-1 block text-[10px] text-amber-200/80">
-            A taxa utilizada é de entrada manual; nenhuma condição é presumida.
+            {rateInputUnit === 'nominal-annual'
+              ? 'Taxa nominal de referência preenchida a partir da tabela enviada. O cálculo a converte para equivalente mensal; confirme a taxa individual, benefícios e indexador na CAIXA.'
+              : 'Para SBPE/outra condição, informe a taxa efetiva consultada. Nenhuma taxa é presumida para essas linhas.'}
           </span>
+          {caixaProgram === 'mcmv-fgts' && getMcmvRateReference(familyIncome) && (
+            <span className="col-span-2 mt-1 block text-[10px] text-sky-200/80">
+              Intervalo da tabela para {mcmvIncomeClassification?.label}:{' '}
+              {getMcmvRateReference(familyIncome)?.rangeLabel}. Preenchido pelo limite inferior como referência.
+            </span>
+          )}
+          {caixaProgram === 'mcmv-procotista' && (
+            <span className="col-span-2 mt-1 block text-[10px] text-sky-200/80">
+              Referência da tabela: 8,66% a.a. nominal + TR. A TR não está incluída no cálculo estimado.
+            </span>
+          )}
           {parameters.monthlyRatePercent === 0 && (
             <span className="mt-1 block text-[10px] text-sky-200/80">
               Com taxa de 0%, SAC e PRICE resultam na mesma prestação. Com juros, a prestação SAC

@@ -98,8 +98,9 @@ export interface SimulationParameters {
   financingQuotaPercent?: number;
   maxTermMonths?: number;
   propertyValueCeiling?: number;
-  rateInputUnit?: 'monthly' | 'annual';
+  rateInputUnit?: 'monthly' | 'annual' | 'nominal-annual';
   annualRatePercent?: number;
+  nominalAnnualRatePercent?: number;
   propertyType?: SimulationPropertyType;
   purpose?: SimulationPurpose;
   municipality?: string;
