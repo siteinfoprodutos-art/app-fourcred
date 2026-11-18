@@ -414,7 +414,8 @@ export const generateSimulationPDF = (
   scenarioName: string,
   parameters: SimulationParameters,
   result: SimulationResult,
-  simulatedAt = new Date().toISOString()
+  simulatedAt = new Date().toISOString(),
+  download = true
 ) => {
   const doc = new jsPDF();
   const formatCurrency = (value: number) =>
@@ -533,21 +534,49 @@ export const generateSimulationPDF = (
     alternateRowStyles: { fillColor: [248, 250, 252] },
   });
 
-  const finalY = (doc as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY || 60;
+  const summaryFinalY =
+    (doc as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY || 60;
+  const scheduleStartY = summaryFinalY > 255 ? 25 : summaryFinalY + 10;
+  if (summaryFinalY > 255) doc.addPage();
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.setTextColor(45, 55, 72);
+  doc.text('Evolução completa das parcelas', 15, scheduleStartY - 5);
+  autoTable(doc, {
+    startY: scheduleStartY,
+    head: [['Parcela', 'Prestação', 'Amortização', 'Juros', 'Saldo devedor']],
+    body: result.installments.map((installment) => [
+      installment.installmentNumber,
+      formatCurrency(installment.payment),
+      formatCurrency(installment.amortization),
+      formatCurrency(installment.interest),
+      formatCurrency(installment.outstandingBalance),
+    ]),
+    styles: { fontSize: 8, textColor: [45, 55, 72] },
+    headStyles: { fillColor: [30, 41, 59] },
+    alternateRowStyles: { fillColor: [248, 250, 252] },
+  });
+  const finalY = (doc as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY || summaryFinalY;
+  if (finalY > 265) doc.addPage();
+  const noticeY = finalY > 265 ? 20 : finalY + 10;
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9);
   doc.setTextColor(180, 83, 9);
   const notice =
     'SIMULAÇÃO FINANCEIRA ESTIMADA — NÃO REPRESENTA APROVAÇÃO DE CRÉDITO OU PROPOSTA OFICIAL DA CAIXA.';
   const noticeLines = doc.splitTextToSize(notice, 180);
-  doc.text(noticeLines, 15, finalY + 10);
+  doc.text(noticeLines, 15, noticeY);
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8);
   doc.setTextColor(100, 100, 100);
   doc.text(
     'Inclui amortização e juros calculados conforme os parâmetros informados. Não inclui seguros, TR, tarifas ou outros encargos.',
     15,
-    finalY + 10 + noticeLines.length * 4.5
+    noticeY + noticeLines.length * 4.5
   );
-  doc.save(`Simulacao_Fourcred_${proposal.id}_${parameters.amortizationSystem.toUpperCase()}.pdf`);
+  const pdfBlob = doc.output('blob');
+  if (download) {
+    doc.save(`Simulacao_Fourcred_${proposal.id}_${parameters.amortizationSystem.toUpperCase()}.pdf`);
+  }
+  return pdfBlob;
 };

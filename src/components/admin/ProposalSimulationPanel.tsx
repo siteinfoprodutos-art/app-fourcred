@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Download, LoaderCircle, Save, X } from 'lucide-react';
+import { AlertTriangle, Download, LoaderCircle, MessageCircle, Save, X } from 'lucide-react';
 import {
   FinancialSimulationRecord,
   ProposalRecord,
@@ -154,6 +154,7 @@ const ResultSummary: React.FC<{
   parameters: SimulationParameters;
   result: SimulationResult;
 }> = ({ proposal, scenarioName, parameters, result }) => {
+  const [whatsAppStatus, setWhatsAppStatus] = useState<string | null>(null);
   const { familyGrossIncome } = getProposalFinancialIndicators(proposal.payload);
   const mcmvIncomeClassification = classifyUrbanMcmvIncome(familyGrossIncome);
   const primaryFgtsMonths = parseFgtsServiceTimeMonths(proposal.payload.p1.serviceTime);
@@ -164,6 +165,67 @@ const ResultSummary: React.FC<{
     primaryFgtsMonths !== null && coProposerFgtsMonths !== null
       ? primaryFgtsMonths + coProposerFgtsMonths
       : null;
+  const shareSimulationOnWhatsApp = async () => {
+    setWhatsAppStatus(null);
+    const simulatedAt = new Date().toISOString();
+    const pdf = generateSimulationPDF(
+      proposal,
+      scenarioName,
+      parameters,
+      result,
+      simulatedAt,
+      false
+    );
+    const fileName =
+      `Simulacao_Fourcred_${proposal.id}_${parameters.amortizationSystem.toUpperCase()}.pdf`;
+    const file = new File([pdf], fileName, { type: 'application/pdf' });
+    const message =
+      `Olá, ${proposal.payload.p1.fullName}! Preparei a simulação financeira do seu financiamento imobiliário. ` +
+      'Podemos prosseguir com o atendimento? Se quiser, também podemos conversar sobre ajustes nos valores ou condições. ' +
+      'Esta é uma estimativa e não representa aprovação de crédito nem proposta oficial da CAIXA.';
+
+    if (
+      typeof navigator.share === 'function' &&
+      typeof navigator.canShare === 'function' &&
+      navigator.canShare({ files: [file] })
+    ) {
+      try {
+        await navigator.share({
+          files: [file],
+          title: 'Simulação financeira Fourcred',
+          text: message,
+        });
+        setWhatsAppStatus('PDF compartilhado. Selecione o WhatsApp para enviar ao cliente.');
+        return;
+      } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') return;
+        setWhatsAppStatus(
+          'O compartilhamento direto não ficou disponível. O PDF será baixado para anexá-lo no WhatsApp.'
+        );
+      }
+    } else {
+      setWhatsAppStatus('O PDF será baixado. Anexe-o à conversa do WhatsApp antes de enviar.');
+    }
+
+    const objectUrl = URL.createObjectURL(pdf);
+    const downloadLink = document.createElement('a');
+    downloadLink.href = objectUrl;
+    downloadLink.download = fileName;
+    downloadLink.click();
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+
+    const phoneDigits = proposal.payload.p1.phoneMobile.replace(/\D/g, '');
+    const whatsappPhone =
+      phoneDigits.length === 10 || phoneDigits.length === 11
+        ? `55${phoneDigits}`
+        : phoneDigits.startsWith('55') && (phoneDigits.length === 12 || phoneDigits.length === 13)
+          ? phoneDigits
+          : '';
+    const whatsappUrl =
+      `https://wa.me/${whatsappPhone}?text=${encodeURIComponent(message)}`;
+    window.open(whatsappUrl, '_blank', 'noopener,noreferrer');
+  };
+
   return (
   <div className="rounded-xl border border-[#FF6B1A]/30 bg-[#FF6B1A]/5 p-4">
     <div className="flex flex-wrap items-start justify-between gap-3">
@@ -176,17 +238,32 @@ const ResultSummary: React.FC<{
           Proposta #{proposal.id} • {formatDate(new Date().toISOString())}
         </p>
       </div>
-      <button
-        type="button"
-        onClick={() =>
-          generateSimulationPDF(proposal, scenarioName, parameters, result, new Date().toISOString())
-        }
-        className="inline-flex items-center gap-2 rounded-lg border border-[#334155] px-3 py-2 text-xs font-bold text-[#CBD5E1] transition hover:border-[#FF6B1A] hover:text-white"
-      >
-        <Download className="h-4 w-4" />
-        Relatório PDF
-      </button>
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() =>
+            generateSimulationPDF(proposal, scenarioName, parameters, result, new Date().toISOString())
+          }
+          className="inline-flex items-center gap-2 rounded-lg border border-[#334155] px-3 py-2 text-xs font-bold text-[#CBD5E1] transition hover:border-[#FF6B1A] hover:text-white"
+        >
+          <Download className="h-4 w-4" />
+          Relatório PDF
+        </button>
+        <button
+          type="button"
+          onClick={() => void shareSimulationOnWhatsApp()}
+          className="inline-flex items-center gap-2 rounded-lg bg-[#25D366] px-3 py-2 text-xs font-bold text-[#052E16] transition hover:bg-[#1EBE5D]"
+        >
+          <MessageCircle className="h-4 w-4" />
+          Enviar PDF pelo WhatsApp
+        </button>
+      </div>
     </div>
+    {whatsAppStatus && (
+      <p role="status" className="mt-3 rounded-lg border border-[#25D366]/20 bg-[#25D366]/10 p-2 text-[10px] text-emerald-100">
+        {whatsAppStatus}
+      </p>
+    )}
     <div className="mt-4 grid grid-cols-2 gap-3 text-xs sm:grid-cols-4">
       <div className="col-span-full border-b border-[#334155] pb-1 font-extrabold uppercase tracking-wider text-[#CBD5E1]/60">Valores</div>
       <div><span className="block text-[#CBD5E1]/50">Valor do imóvel</span><b>{formatCurrency(parameters.propertyValue)}</b></div>
@@ -556,6 +633,8 @@ export const ProposalSimulationPanel: React.FC<{
       termUnit,
     ]
   );
+
+  //calcular metodo
 
   const calculations = useMemo(() => {
     try {
