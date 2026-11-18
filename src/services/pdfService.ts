@@ -449,19 +449,115 @@ export const generateSimulationPDF = (
     'reforma-casa-brasil': 'Reforma Casa Brasil',
   };
 
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const pageHeight = doc.internal.pageSize.getHeight();
+  const leftX = 14;
+  const rightX = pageWidth - leftX;
+  const contentWidth = rightX - leftX;
+  const drawPageHeaderAndFooter = (pageNo: number, totalPages: number) => {
+    doc.setFillColor(15, 23, 42);
+    doc.rect(0, 0, pageWidth, 31, 'F');
+    doc.setFillColor(255, 107, 26);
+    doc.rect(0, 31, pageWidth, 1.5, 'F');
+
+    drawFourcredLogo(doc, leftX, 15, true);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.setTextColor(203, 213, 225);
+    doc.text('SOLUÇÕES FINANCEIRAS & CRÉDITO IMOBILIÁRIO', leftX, 22);
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8);
+    doc.setTextColor(255, 255, 255);
+    doc.text('Central de Atendimento Fourcred', rightX, 8, { align: 'right' });
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(203, 213, 225);
+    doc.text('Tel: (11) 4003-4921 | WhatsApp: (11) 98765-4321', rightX, 13, { align: 'right' });
+    doc.text('E-mail: contato@fourcred.com.br', rightX, 18, { align: 'right' });
+    doc.text('Website: www.fourcred.com.br', rightX, 23, { align: 'right' });
+
+    doc.setDrawColor(226, 232, 240);
+    doc.setLineWidth(0.4);
+    doc.line(leftX, pageHeight - 17, rightX, pageHeight - 17);
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6.5);
+    doc.setTextColor(100, 116, 139);
+    doc.text(
+      'Fourcred Soluções Financeiras Ltda. | CNPJ: 42.189.503/0001-90 | São Paulo - SP',
+      leftX,
+      pageHeight - 11
+    );
+    doc.setFont('helvetica', 'bold');
+    doc.text(`Página ${pageNo} de ${totalPages}`, rightX, pageHeight - 11, { align: 'right' });
+    doc.setFont('helvetica', 'italic');
+    doc.setFontSize(6);
+    doc.text(
+      'Simulação estimada e confidencial. Sujeita à análise de crédito e às condições da instituição financeira.',
+      leftX,
+      pageHeight - 6
+    );
+  };
+
   doc.setFont('helvetica', 'bold');
-  doc.setFontSize(18);
+  doc.setFontSize(7.5);
   doc.setTextColor(255, 107, 26);
-  doc.text('FOURCRED | Simulação Financeira', 15, 20);
+  doc.text('CENTRAL DE SIMULAÇÃO', leftX, 42);
+  doc.setFontSize(17);
+  doc.setTextColor(15, 23, 42);
+  doc.text('Simulação de financiamento imobiliário', leftX, 52);
+
+  doc.setFillColor(248, 250, 252);
+  doc.roundedRect(leftX, 59, contentWidth, 25, 2, 2, 'F');
+  doc.setFontSize(7);
+  doc.setTextColor(100, 116, 139);
+  doc.text('CLIENTE', leftX + 5, 66);
+  doc.text(`PROPOSTA #${proposal.id}`, rightX - 5, 66, { align: 'right' });
+  doc.setFont('helvetica', 'bold');
   doc.setFontSize(10);
-  doc.setTextColor(45, 55, 72);
-  doc.text(`Cliente: ${proposal.payload.p1.fullName}`, 15, 31);
-  doc.text(`Código da proposta: ${proposal.id}`, 15, 37);
-  doc.text(`Cenário: ${scenarioName}`, 15, 43);
-  doc.text(`Data da simulação: ${formatDate(simulatedAt)}`, 15, 49);
+  doc.setTextColor(30, 41, 59);
+  doc.text(proposal.payload.p1.fullName, leftX + 5, 73);
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(7.5);
+  doc.setTextColor(71, 85, 105);
+  doc.text(`Cenário: ${scenarioName}`, leftX + 5, 80);
+  doc.text(`Emitida em: ${formatDate(simulatedAt)}`, rightX - 5, 80, { align: 'right' });
+
+  const summaryCards = [
+    { label: 'VALOR DO IMÓVEL', value: formatCurrency(parameters.propertyValue) },
+    { label: 'ENTRADA', value: formatCurrency(parameters.downPayment) },
+    { label: 'VALOR FINANCIADO', value: formatCurrency(parameters.financedAmount) },
+    { label: '1ª PRESTAÇÃO', value: formatCurrency(result.firstInstallment) },
+  ];
+  const cardGap = 3;
+  const cardWidth = (contentWidth - cardGap * (summaryCards.length - 1)) / summaryCards.length;
+  summaryCards.forEach((card, index) => {
+    const cardX = leftX + index * (cardWidth + cardGap);
+    doc.setDrawColor(226, 232, 240);
+    doc.setFillColor(255, 255, 255);
+    doc.roundedRect(cardX, 89, cardWidth, 20, 1.5, 1.5, 'FD');
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(6.5);
+    doc.setTextColor(100, 116, 139);
+    doc.text(card.label, cardX + 3, 96);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(8.5);
+    doc.setTextColor(15, 23, 42);
+    doc.text(card.value, cardX + 3, 103);
+  });
+
+  doc.setFillColor(15, 23, 42);
+  doc.roundedRect(leftX, 115, contentWidth, 8, 1.5, 1.5, 'F');
+  doc.setFillColor(255, 107, 26);
+  doc.rect(leftX, 115, 2.5, 8, 'F');
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(9);
+  doc.setTextColor(255, 255, 255);
+  doc.text('Detalhamento da simulação', leftX + 6, 120.5);
 
   autoTable(doc, {
-    startY: 56,
+    startY: 127,
+    margin: { top: 38, bottom: 23, left: leftX, right: leftX },
     head: [['Parâmetro', 'Valor']],
     body: [
       ['Valor do imóvel', formatCurrency(parameters.propertyValue)],
@@ -529,21 +625,22 @@ export const generateSimulationPDF = (
       ['Total estimado pago', formatCurrency(result.totalPaid)],
       ['Total estimado de juros', formatCurrency(result.totalInterest)],
     ],
-    styles: { fontSize: 9, textColor: [45, 55, 72] },
-    headStyles: { fillColor: [30, 41, 59] },
+    styles: { fontSize: 8.5, textColor: [45, 55, 72], cellPadding: 2.5 },
+    headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255] },
     alternateRowStyles: { fillColor: [248, 250, 252] },
   });
 
   const summaryFinalY =
-    (doc as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY || 60;
-  const scheduleStartY = summaryFinalY > 255 ? 25 : summaryFinalY + 10;
-  if (summaryFinalY > 255) doc.addPage();
+    (doc as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY || 127;
+  const scheduleStartY = summaryFinalY > 230 ? 43 : summaryFinalY + 10;
+  if (summaryFinalY > 230) doc.addPage();
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(11);
-  doc.setTextColor(45, 55, 72);
-  doc.text('Evolução completa das parcelas', 15, scheduleStartY - 5);
+  doc.setTextColor(15, 23, 42);
+  doc.text('Evolução completa das parcelas', leftX, scheduleStartY - 5);
   autoTable(doc, {
     startY: scheduleStartY,
+    margin: { top: 38, bottom: 23, left: leftX, right: leftX },
     head: [['Parcela', 'Prestação', 'Amortização', 'Juros', 'Saldo devedor']],
     body: result.installments.map((installment) => [
       installment.installmentNumber,
@@ -552,13 +649,14 @@ export const generateSimulationPDF = (
       formatCurrency(installment.interest),
       formatCurrency(installment.outstandingBalance),
     ]),
-    styles: { fontSize: 8, textColor: [45, 55, 72] },
-    headStyles: { fillColor: [30, 41, 59] },
+    styles: { fontSize: 8, textColor: [45, 55, 72], cellPadding: 2 },
+    headStyles: { fillColor: [30, 41, 59], textColor: [255, 255, 255] },
     alternateRowStyles: { fillColor: [248, 250, 252] },
   });
-  const finalY = (doc as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY || summaryFinalY;
-  if (finalY > 265) doc.addPage();
-  const noticeY = finalY > 265 ? 20 : finalY + 10;
+  const finalY =
+    (doc as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY || summaryFinalY;
+  if (finalY > 245) doc.addPage();
+  const noticeY = finalY > 245 ? 43 : finalY + 10;
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(9);
   doc.setTextColor(180, 83, 9);
@@ -571,9 +669,16 @@ export const generateSimulationPDF = (
   doc.setTextColor(100, 100, 100);
   doc.text(
     'Inclui amortização e juros calculados conforme os parâmetros informados. Não inclui seguros, TR, tarifas ou outros encargos.',
-    15,
+    leftX,
     noticeY + noticeLines.length * 4.5
   );
+
+  const totalPages = doc.getNumberOfPages();
+  for (let pageNo = 1; pageNo <= totalPages; pageNo++) {
+    doc.setPage(pageNo);
+    drawPageHeaderAndFooter(pageNo, totalPages);
+  }
+
   const pdfBlob = doc.output('blob');
   if (download) {
     doc.save(`Simulacao_Fourcred_${proposal.id}_${parameters.amortizationSystem.toUpperCase()}.pdf`);

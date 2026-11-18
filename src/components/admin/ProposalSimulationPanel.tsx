@@ -180,9 +180,8 @@ const ResultSummary: React.FC<{
       `Simulacao_Fourcred_${proposal.id}_${parameters.amortizationSystem.toUpperCase()}.pdf`;
     const file = new File([pdf], fileName, { type: 'application/pdf' });
     const message =
-      `Olá, ${proposal.payload.p1.fullName}! Preparei a simulação financeira do seu financiamento imobiliário. ` +
-      'Podemos prosseguir com o atendimento? Se quiser, também podemos conversar sobre ajustes nos valores ou condições. ' +
-      'Esta é uma estimativa e não representa aprovação de crédito nem proposta oficial da CAIXA.';
+      `Olá, ${proposal.payload.p1.fullName}! Segue a simulação feita para o seu financiamento imobiliário. ` +
+      'Podemos avançar com a solicitação de aprovação? A simulação é uma estimativa e está sujeita à análise de crédito e às condições da instituição financeira.';
 
     if (
       typeof navigator.share === 'function' &&
